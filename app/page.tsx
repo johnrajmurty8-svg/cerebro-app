@@ -1,5 +1,12 @@
 'use client'
-// @ts-nocheck
+
+type WorkflowStatus = Record<number, string>;
+type ProjectVersion = { ver: number; date: string; ans: Record<string, string>; mode: string | null; changeBrief?: string; };
+type QuestionDef = { id: string; label: string; type: string; placeholder: string; guidance: string; required?: boolean; };
+type SectionDef = { id: string; title: string; icon: string; description: string; questions: QuestionDef[]; };
+type DiffChange = { id: string; label: string; section: string; oldVal?: string; newVal?: string; };
+type DiffResult = { added: DiffChange[]; modified: DiffChange[]; removed: DiffChange[]; unchanged: number; };
+type Project = { id: string; name: string; status: string; mode: string | null; created: string; lastEdited: string; currentAnswers: Record<string, string>; versions: ProjectVersion[]; docs: Record<string, string> | null; changeBrief: string; workflowStatus: WorkflowStatus; };
 // NOTE: Anthropic API calls from localhost will fail with CORS.
 // PRIMARY FLOW: Use the 📋 Copy button on the last intake section,
 // then paste into Claude.ai to generate your documents.
@@ -132,17 +139,17 @@ const SPIRIT=[
 /* ═══ System prompt, generators ═══ */
 const SYS=`You are a senior product/technical lead. Generate 5 docs separated by "---DOC_SEPARATOR---". Each starts "# DOC_N: Title" (N=1-5). DOC1: PRD (14 sections, FR-001 IDs, acceptance criteria, MoSCoW). DOC2: App Flow (routes, actions, conditionals). DOC3: UI Guide/DESIGN.md (tokens, components, breakpoints). DOC4: Backend (data models, API endpoints, services). DOC5: Security (auth, encryption, OWASP, compliance). Flag gaps with [⚠️ ATTENTION NEEDED]. 800-2000 words each.`;
 
-function genClaudeMd(a){return `# ${a.product_name||"Product"} — Claude Code Instructions\n\n## Overview\n${a.one_liner||"See project-brief.md"}\n\n## Stack\n${a.tech_stack||"Best modern stack"}\n\n## Rules\n- Read project-brief.md FIRST\n- plan.md before coding — wait for approval\n- Follow design.md, backend-spec.md, security-checklist.md, app-flow.md\n- TypeScript, tests, small components, env vars\n\n## Workflow\n1. Read doc → 2. Plan → 3. Approve → 4. Build → 5. Test → 6. Report\n\n## Principles\nSimplicity. No shortcuts. Minimal impact. Ask when unsure.`;}
-function genBrief(a){return `# ${a.product_name||"Product"} — Brief\n\n> ${a.one_liner||""}\n\nOwner: ${a.author||"TBD"} | Launch: ${a.target_date||"TBD"} | Team: ${a.team_size||"Solo+AI"}\n\n## Build Order\n1. Setup 2. DB+Auth 3. API 4. UI Shell 5. Features 6. Polish 7. Deploy\n\n## Docs\nprd.md, app-flow.md, design.md, backend-spec.md, security-checklist.md, CLAUDE.md`;}
-function genPrompts(a){return `# Prompts for ${a.product_name||"Product"}\n\n═══ SESSION 1: SETUP (~20min) ═══\nRead CLAUDE.md + all docs. Create plan.md with phases. No code yet.\n\n═══ SESSION 2: BACKEND (~1-2hr) ═══\nExecute Phase 1-3. Follow backend-spec.md + security-checklist.md.\n\n═══ SESSION 3: FRONTEND (~1-2hr) ═══\nExecute Phase 4-5. Follow design.md + app-flow.md.\n\n═══ SESSION 4: POLISH (~1hr) ═══\nPhase 6-7. Errors, loading, responsive, tests, deploy.\n\n═══ OPTIONAL: STITCH ═══\nRedesign in Stitch → export → "Update [component] to match. Keep functionality."`;}
+function genClaudeMd(a: Record<string,string>){return `# ${a.product_name||"Product"} — Claude Code Instructions\n\n## Overview\n${a.one_liner||"See project-brief.md"}\n\n## Stack\n${a.tech_stack||"Best modern stack"}\n\n## Rules\n- Read project-brief.md FIRST\n- plan.md before coding — wait for approval\n- Follow design.md, backend-spec.md, security-checklist.md, app-flow.md\n- TypeScript, tests, small components, env vars\n\n## Workflow\n1. Read doc → 2. Plan → 3. Approve → 4. Build → 5. Test → 6. Report\n\n## Principles\nSimplicity. No shortcuts. Minimal impact. Ask when unsure.`;}
+function genBrief(a: Record<string,string>){return `# ${a.product_name||"Product"} — Brief\n\n> ${a.one_liner||""}\n\nOwner: ${a.author||"TBD"} | Launch: ${a.target_date||"TBD"} | Team: ${a.team_size||"Solo+AI"}\n\n## Build Order\n1. Setup 2. DB+Auth 3. API 4. UI Shell 5. Features 6. Polish 7. Deploy\n\n## Docs\nprd.md, app-flow.md, design.md, backend-spec.md, security-checklist.md, CLAUDE.md`;}
+function genPrompts(a: Record<string,string>){return `# Prompts for ${a.product_name||"Product"}\n\n═══ SESSION 1: SETUP (~20min) ═══\nRead CLAUDE.md + all docs. Create plan.md with phases. No code yet.\n\n═══ SESSION 2: BACKEND (~1-2hr) ═══\nExecute Phase 1-3. Follow backend-spec.md + security-checklist.md.\n\n═══ SESSION 3: FRONTEND (~1-2hr) ═══\nExecute Phase 4-5. Follow design.md + app-flow.md.\n\n═══ SESSION 4: POLISH (~1hr) ═══\nPhase 6-7. Errors, loading, responsive, tests, deploy.\n\n═══ OPTIONAL: STITCH ═══\nRedesign in Stitch → export → "Update [component] to match. Keep functionality."`;}
 
 /* ═══ DIFF ENGINE ═══ */
-function computeDiff(oldAns,newAns,sections){const changes={added:[],modified:[],removed:[],unchanged:0};const allQs=sections.flatMap(s=>s.questions.map(q=>({...q,section:s.title})));allQs.forEach(q=>{const o=(oldAns[q.id]||"").trim();const n=(newAns[q.id]||"").trim();if(!o&&n)changes.added.push({id:q.id,label:q.label,section:q.section,newVal:n});else if(o&&!n)changes.removed.push({id:q.id,label:q.label,section:q.section,oldVal:o});else if(o&&n&&o!==n)changes.modified.push({id:q.id,label:q.label,section:q.section,oldVal:o,newVal:n});else if(o&&n&&o===n)changes.unchanged++;});return changes;}
+function computeDiff(oldAns: Record<string,string>,newAns: Record<string,string>,sections: SectionDef[]){const changes: DiffResult={added:[],modified:[],removed:[],unchanged:0};const allQs=sections.flatMap(s=>s.questions.map(q=>({...q,section:s.title})));allQs.forEach(q=>{const o=(oldAns[q.id]||"").trim();const n=(newAns[q.id]||"").trim();if(!o&&n)changes.added.push({id:q.id,label:q.label,section:q.section,newVal:n});else if(o&&!n)changes.removed.push({id:q.id,label:q.label,section:q.section,oldVal:o});else if(o&&n&&o!==n)changes.modified.push({id:q.id,label:q.label,section:q.section,oldVal:o,newVal:n});else if(o&&n&&o===n)changes.unchanged++;});return changes;}
 
-function generateChangeBrief(diff,oldVer,newVer,productName){let b=`# Change Brief: V${oldVer} → V${newVer}\n`;b+=`Product: ${productName}\nGenerated: ${new Date().toLocaleDateString()}\n\n`;b+=`## Summary\n`;b+=`- ${diff.added.length} fields added\n- ${diff.modified.length} fields modified\n- ${diff.removed.length} fields removed\n- ${diff.unchanged} fields unchanged\n\n`;if(diff.modified.length){b+=`## Modified\n`;diff.modified.forEach(c=>{b+=`### ${c.section} → ${c.label}\n`;b+=`**Was:** ${c.oldVal.substring(0,200)}${c.oldVal.length>200?"...":""}\n`;b+=`**Now:** ${c.newVal.substring(0,200)}${c.newVal.length>200?"...":""}\n\n`;});}if(diff.added.length){b+=`## Added\n`;diff.added.forEach(c=>{b+=`### ${c.section} → ${c.label}\n${c.newVal.substring(0,200)}${c.newVal.length>200?"...":""}\n\n`;});}if(diff.removed.length){b+=`## Removed\n`;diff.removed.forEach(c=>{b+=`### ${c.section} → ${c.label}\n~~${c.oldVal.substring(0,200)}~~\n\n`;});}b+=`\n---\n\n## Claude Code Update Prompt\n\nPaste this into Claude Code:\n\n`;b+=`Read change-brief.md. This describes changes from V${oldVer} to V${newVer}.\nMake ONLY the listed changes. Do not rebuild unchanged features.\nCreate an update plan first — do not code until I approve.\nFor each change, update the minimum files needed.\n`;return b;}
+function generateChangeBrief(diff: DiffResult,oldVer: number,newVer: number,productName: string){let b=`# Change Brief: V${oldVer} → V${newVer}\n`;b+=`Product: ${productName}\nGenerated: ${new Date().toLocaleDateString()}\n\n`;b+=`## Summary\n`;b+=`- ${diff.added.length} fields added\n- ${diff.modified.length} fields modified\n- ${diff.removed.length} fields removed\n- ${diff.unchanged} fields unchanged\n\n`;if(diff.modified.length){b+=`## Modified\n`;diff.modified.forEach((c: DiffChange)=>{b+=`### ${c.section} → ${c.label}\n`;b+=`**Was:** ${(c.oldVal||"").substring(0,200)}${(c.oldVal||"").length>200?"...":""}\n`;b+=`**Now:** ${(c.newVal||"").substring(0,200)}${(c.newVal||"").length>200?"...":""}\n\n`;});}if(diff.added.length){b+=`## Added\n`;diff.added.forEach((c: DiffChange)=>{b+=`### ${c.section} → ${c.label}\n${(c.newVal||"").substring(0,200)}${(c.newVal||"").length>200?"...":""}\n\n`;});}if(diff.removed.length){b+=`## Removed\n`;diff.removed.forEach((c: DiffChange)=>{b+=`### ${c.section} → ${c.label}\n~~${(c.oldVal||"").substring(0,200)}~~\n\n`;});}b+=`\n---\n\n## Claude Code Update Prompt\n\nPaste this into Claude Code:\n\n`;b+=`Read change-brief.md. This describes changes from V${oldVer} to V${newVer}.\nMake ONLY the listed changes. Do not rebuild unchanged features.\nCreate an update plan first — do not code until I approve.\nFor each change, update the minimum files needed.\n`;return b;}
 
 /* ═══ Helpers ═══ */
-function FileChip({file,onRemove}){return <span style={{display:"inline-flex",alignItems:"center",gap:4,background:"#f7f6f3",border:"1px solid #e3e2e0",borderRadius:6,padding:"3px 8px",fontSize:11,maxWidth:160}}><span style={{fontSize:12}}>📁</span><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,color:"#787774"}}>{file.name}</span><button onClick={onRemove} style={{background:"none",border:"none",color:"#9b9b9b",cursor:"pointer",fontSize:13,padding:0}}>×</button></span>;}
+function FileChip({file,onRemove}: {file: File, onRemove: ()=>void}){return <span style={{display:"inline-flex",alignItems:"center",gap:4,background:"#f7f6f3",border:"1px solid #e3e2e0",borderRadius:6,padding:"3px 8px",fontSize:11,maxWidth:160}}><span style={{fontSize:12}}>📁</span><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,color:"#787774"}}>{file.name}</span><button onClick={onRemove} style={{background:"none",border:"none",color:"#9b9b9b",cursor:"pointer",fontSize:13,padding:0}}>×</button></span>;}
 
 const TABS=["intake","results","versions","workflow","usage"];
 const TL={intake:"Intake",results:"Docs",versions:"Versions",workflow:"Workflow",usage:"Usage"};
@@ -150,12 +157,12 @@ const DT=[{key:"prd",label:"PRD",file:"prd.md"},{key:"appFlow",label:"App Flow",
 
 /* ═══ STORAGE HELPERS ═══ */
 const genId=()=>`proj_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
-const DEFAULT_WF_STATUS={1:"notStarted",2:"notStarted",3:"notStarted",4:"notStarted",5:"notStarted"};
-const blankProject=(mode,id)=>({id:id||genId(),name:"Untitled Project",status:"draft",mode,created:new Date().toISOString(),lastEdited:new Date().toISOString(),currentAnswers:{},versions:[],docs:null,changeBrief:"",workflowStatus:{...DEFAULT_WF_STATUS}});
-function loadStorage(){try{const r=localStorage.getItem("cerebro-projects");if(r){const d=JSON.parse(r);if(d?.projects)return d;}}catch{}return{projects:[],activeProjectId:null};}
-function saveStorage(data){try{localStorage.setItem("cerebro-projects",JSON.stringify(data));}catch{}}
+const DEFAULT_WF_STATUS: WorkflowStatus={1:"notStarted",2:"notStarted",3:"notStarted",4:"notStarted",5:"notStarted"};
+const blankProject=(mode: string|null, id?: string)=>({id:id||genId(),name:"Untitled Project",status:"draft",mode,created:new Date().toISOString(),lastEdited:new Date().toISOString(),currentAnswers:{},versions:[],docs:null,changeBrief:"",workflowStatus:{...DEFAULT_WF_STATUS}});
+
+function saveStorage(data: {projects: Project[], activeProjectId: string|null}){try{localStorage.setItem("cerebro-projects",JSON.stringify(data));}catch{}}
 function migrateIfNeeded(){try{const r=localStorage.getItem("cerebro-projects");if(r){const d=JSON.parse(r);if(d?.projects){// Patch existing projects missing workflowStatus
-const patched={...d,projects:d.projects.map(p=>({...p,workflowStatus:p.workflowStatus||{...DEFAULT_WF_STATUS}}))};return patched;}}}catch{}try{const old=localStorage.getItem("cerebro-v1");if(old){const d=JSON.parse(old);const id=genId();const project={id,name:d.ans?.product_name||"Migrated Project",status:"draft",mode:d.mode||"avatar",created:new Date().toISOString(),lastEdited:new Date().toISOString(),currentAnswers:d.ans||{},versions:(d.versions||[]),docs:null,changeBrief:"",workflowStatus:{...DEFAULT_WF_STATUS}};const data={projects:[project],activeProjectId:null};saveStorage(data);localStorage.removeItem("cerebro-v1");return data;}}catch{}return{projects:[],activeProjectId:null};}
+const patched={...d,projects:d.projects.map((p: Project)=>({...p,workflowStatus:p.workflowStatus||{...DEFAULT_WF_STATUS}}))};return patched;}}}catch{}try{const old=localStorage.getItem("cerebro-v1");if(old){const d=JSON.parse(old);const id=genId();const project={id,name:d.ans?.product_name||"Migrated Project",status:"draft",mode:d.mode||"avatar",created:new Date().toISOString(),lastEdited:new Date().toISOString(),currentAnswers:d.ans||{},versions:(d.versions||[]),docs:null,changeBrief:"",workflowStatus:{...DEFAULT_WF_STATUS}};const data={projects:[project],activeProjectId:null};saveStorage(data);localStorage.removeItem("cerebro-v1");return data;}}catch{}return{projects:[],activeProjectId:null};}
 
 /* ═══ STATUS CONFIG ═══ */
 const SC={
@@ -171,7 +178,7 @@ const SC={
 const TEST_DATA={product_name:"FlowBoard",one_liner:"A visual project management app for remote teams that turns conversations into task boards using AI",author:"Alex Rivera, Product Manager",stakeholders:"• Maya Chen — Engineering Lead (Approver)\n• Jordan Park — Design Lead (Contributor)\n• Sam Torres — CEO (Informed)\n• Priya Mehta — QA Lead (Consulted)",target_date:"Q3 2026 — August 15 target",team_size:"1 PM (me), 1 designer, 2 engineers + Claude Code for acceleration.",problem_statement:"Remote teams waste 6+ hours per week manually converting Slack/Teams conversations into actionable tasks. 73% of action items discussed in meetings are never tracked, leading to missed deadlines and duplicated work.",who_affected:"Primary: Project managers and team leads at remote-first companies (10-50 employees).",current_solutions:"• Jira (45%) — powerful but over-complex, 30min+ daily maintenance\n• Trello (25%) — too simple for real projects, no AI\n• Asana (15%) — good but expensive\n• Spreadsheets + Slack (15%) — chaos",business_case:"Project management software market: $7.1B in 2026, growing 13% YoY. No major player converts conversations to tasks automatically.",cost_of_inaction:"Competitors like Linear are adding AI features in Q4 2026. The window is 6-12 months before incumbents catch up.",primary_persona:"Name: Sarah the Team Lead\nRole: Engineering manager at a 30-person SaaS startup\nAge: 34\nGoals: Keep her team aligned without micromanaging.\nFrustrations: Spends 45 min/day updating Jira.",secondary_personas:"Dev Dan — Senior developer who hates updating task statuses.\nCEO Claire — Needs a 30-second weekly view of all projects.",user_journey:"1. Team finishes a Slack discussion\n2. FlowBoard AI detects action items\n3. Suggests task cards with assignees\n4. Sarah approves with one click\n5. Tasks appear on the team's board",jobs_to_be_done:"• When my team discusses tasks in Slack, I want them auto-captured so nothing falls through\n• When I start my day, I want a clear view of what's blocked",product_goals:"1. Reduce daily PM admin time from 45 min to under 10 min\n2. Capture 90%+ of discussed action items\n3. Achieve 70% weekly active usage within 2 months\n4. Reach 500 paying teams within 6 months\n5. NPS > 50 by month 3",kpis:"• PM admin time: 45 min/day → <10 min/day\n• Task capture rate: ~27% → 90%+\n• Weekly active teams: 70% of signed-up teams",leading_indicators:"Sign-up to first board creation rate, Slack integration completion rate, AI suggestion acceptance rate",in_scope:"• AI conversation-to-task extraction (Slack integration)\n• Visual Kanban board with drag-and-drop\n• Auto-status updates from GitHub\n• Team dashboard with project health metrics\n• Daily digest emails\n• Slack bot for quick task creation",out_of_scope:"• Native mobile apps — Phase 2\n• Microsoft Teams integration — Phase 2\n• Time tracking — Phase 2\n• Gantt charts — Phase 3",future_phases:"Phase 2 (Q4 2026): Native iOS/Android, Teams integration\nPhase 3 (Q1 2027): Gantt charts, custom automations",core_features:"Epic 1: Conversation Intelligence\n- Connect Slack workspace\n- AI scans channels for action items\n- Suggests task cards\n- One-click approve/edit/dismiss\n\nEpic 2: Visual Board\n- Kanban columns (To Do, In Progress, Review, Done)\n- Drag-and-drop cards\n- Card detail view\n\nEpic 3: Auto-Status\n- GitHub integration\n- Auto-move cards based on PR/commit activity",user_stories:"• As a team lead, I want AI to extract tasks from Slack so I don't manually create tickets\n• As a developer, I want my task status to update when I push code",priority_notes:"Conversation Intelligence + Visual Board = MUST HAVE\nAuto-Status from GitHub = SHOULD HAVE\nDashboard + Digest = SHOULD HAVE",performance:"Page load <2s, AI task extraction <5s per conversation, board renders <1s with 500+ cards",security:"OAuth 2.0 (Google + Slack SSO). AES-256 at rest, TLS 1.3 in transit. SOC 2 Type I by month 6. GDPR-compliant.",accessibility:"WCAG 2.1 AA compliance. Full keyboard navigation. Screen reader support.",platforms:"Web: Chrome, Firefox, Safari, Edge (latest 2 versions). Responsive. Min screen: 375px.",tech_stack:"Frontend: Next.js 14 + Tailwind CSS\nBackend: Node.js + tRPC\nDatabase: Supabase (PostgreSQL + Realtime)\nAuth: Clerk\nAI: Claude API\nEmail: Resend",integrations:"• Slack — OAuth app, event subscriptions, bot\n• GitHub — webhooks\n• Google OAuth — social login\n• Resend — transactional emails\n• Stripe — billing",data_model:"Users, Teams, Projects, Boards, Columns, Tasks, TaskComments, SlackConnections, GitHubConnections, AIExtractions",ai_instructions:"Use Claude Code for all backend logic and AI integration. All components must be atomic and typed. Write E2E tests for critical flows.",design_direction:"Modern, clean SaaS inspired by Linear (speed + density) and Notion (flexibility). Dark mode primary. Brand colors: Electric indigo (#6366F1) + Slate (#0F172A).",key_screens:"1. Board View — Kanban columns\n2. Inbox — AI-suggested tasks\n3. Task Detail — Full card\n4. Dashboard — Project health\n5. Settings — Team management\n6. Onboarding — Connect Slack + GitHub",navigation:"Left sidebar: Projects list + Board/Inbox/Dashboard toggle. Top bar: search, filters. Command palette (Cmd+K).",interactions:"Drag-and-drop task cards. Inline editing. Command palette (Cmd+K). Keyboard shortcuts. 60fps drag animations.",phases:"Phase 0 — Discovery & Design (2 weeks)\nPhase 1 — MVP Build (6 weeks)\nPhase 2 — Beta (2 weeks)\nPhase 3 — Public Launch (1 week)",milestones:"• Design complete: May 1\n• Slack integration working: May 15\n• AI extraction pipeline: May 30\n• Board UI complete: June 15\n• Beta launch: July 1\n• Public launch: August 15",launch_criteria:"GO: All P0 bugs resolved, Slack integration verified, AI extraction accuracy >85%, load test passed.\nNO-GO: Any P0 open, Slack API approval pending.",known_risks:"1. Slack API rate limits\n2. AI extraction accuracy variability\n3. GitHub webhook reliability\n4. Small team — key person dependency\n5. Slack app approval process 2-4 weeks",mitigations:"1. Queue-based processing with backoff\n2. Human-in-the-loop: always show suggestions, never auto-create\n3. Retry logic + manual sync fallback\n4. Document everything, use Claude Code\n5. Submit Slack app early in Phase 0",dependencies:"Slack app directory approval (2-4 weeks), GitHub OAuth app registration, Clerk account setup, Supabase project provisioning",existing_research:"15 user interviews with PMs (March 2026). 93% say task capture is their #1 pain. 87% would pay $8-15/user/month.",competitors:"• Linear: Best UX but no conversation integration. $8/user/mo.\n• Jira: Market leader but over-complex. $7.75/user/mo.\n• Asana: Good for non-technical teams. $10.99/user/mo.",budget:"Infrastructure: $0-100/month (Supabase free tier, Vercel free tier). Must launch before September for YC W27.",anything_else:"Applying to YC Winter 2027 batch. MVP needs to be live with real users and revenue traction by October 2026."};
 
 /* ═══ WORKFLOW PROMPTS ═══ */
-const WF_PROMPTS={
+const WF_PROMPTS: Record<number,string>={
   1:`Read CLAUDE.md and project-brief.md carefully. Then read all documents in this folder: prd.md, app-flow.md, design.md, backend-spec.md, security-checklist.md.
 
 Create a detailed build plan in plan.md with these phases:
@@ -234,27 +241,26 @@ const WF_SESSIONS=[
 /* ═══ MAIN APP ═══ */
 export default function Cerebro(){
   const [view,setView]=useState("dashboard");
-  const [projects,setProjects]=useState([]);
-  const [activeProjectId,setActiveProjectId]=useState(null);
-  const [openMenu,setOpenMenu]=useState(null);
+  const [projects,setProjects]=useState<Project[]>([]);
+  const [activeProjectId,setActiveProjectId]=useState<string|null>(null);
+  const [openMenu,setOpenMenu]=useState<string|null>(null);
   const [showArchived,setShowArchived]=useState(false);
   const [showSwitcher,setShowSwitcher]=useState(false);
   const [showStatusMenu,setShowStatusMenu]=useState(false);
   const hasLoaded=useRef(false);
   const [tab,setTab]=useState("intake");
   const [sec,setSec]=useState(0);
-  const [sidebar,setSidebar]=useState(true);
   const [flash,setFlash]=useState(false);
   const [generating,setGenerating]=useState(false);
   const [genProg,setGenProg]=useState("");
   const [genErr,setGenErr]=useState("");
-  const [copied,setCopied]=useState({});
+  const [copied,setCopied]=useState<Record<string,boolean>>({});
   const [activeDoc,setActiveDoc]=useState("prd");
-  const [files,setFiles]=useState({});
+  const [files,setFiles]=useState<Record<string,File[]>>({});
   const [showModeConfirm,setShowModeConfirm]=useState(false);
-  const [expandedSession,setExpandedSession]=useState(null);
-  const fR=useRef({});
-  const formRef=useRef(null);
+  const [expandedSession,setExpandedSession]=useState<number|null>(null);
+  const fR=useRef<Record<string,HTMLInputElement|null>>({});
+  const formRef=useRef<HTMLDivElement>(null);
 
   /* ── Design tokens ── */
   const N={bg:"#ffffff",sbg:"#f7f6f3",hov:"rgba(55,53,47,0.08)",act:"rgba(55,53,47,0.12)",tx:"#37352f",ts:"#787774",tm:"#9b9b9b",bd:"#e3e2e0"};
@@ -274,7 +280,7 @@ export default function Cerebro(){
   const accent=mode==="avatar"?CL.purple:CL.green;
 
   /* ── Shared derived ── */
-  const fmtDate=(iso)=>{try{return new Date(iso).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});}catch{return"";}};
+  const fmtDate=(iso: string)=>{try{return new Date(iso).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});}catch{return"";}};
   const active_ps=projects.filter(p=>p.status!=="archived"&&p.status!=="deleted");
   const inactive_ps=projects.filter(p=>p.status==="archived"||p.status==="deleted");
 
@@ -293,37 +299,37 @@ export default function Cerebro(){
   },[projects,activeProjectId]);
 
   /* ── Helpers ── */
-  const updateActiveProject=useCallback((updates)=>{
+  const updateActiveProject=useCallback((updates: Partial<Project>)=>{
     setProjects(prev=>prev.map(p=>p.id===activeProjectId?{...p,...updates,lastEdited:new Date().toISOString()}:p));
   },[activeProjectId]);
 
-  const openProject=(id)=>{setActiveProjectId(id);setView("project");setTab("intake");setSec(0);setFiles({});setGenErr("");};
+  const openProject=(id: string)=>{setActiveProjectId(id);setView("project");setTab("intake");setSec(0);setFiles({});setGenErr("");};
   const goToDashboard=()=>{setView("dashboard");setActiveProjectId(null);setShowSwitcher(false);setShowStatusMenu(false);};
-  const createProject=(selectedMode)=>{const id=genId();setProjects(prev=>[...prev,blankProject(selectedMode,id)]);setActiveProjectId(id);setView("project");setTab("intake");setSec(0);setFiles({});setGenErr("");};
-  const archiveProject=(id)=>{setProjects(prev=>prev.map(p=>p.id===id?{...p,status:"archived"}:p));setOpenMenu(null);};
-  const deleteProject=(id)=>{setProjects(prev=>prev.map(p=>p.id===id?{...p,status:"deleted"}:p));setOpenMenu(null);};
-  const restoreProject=(id)=>{setProjects(prev=>prev.map(p=>p.id===id?{...p,status:"draft"}:p));setOpenMenu(null);};
-  const permanentDelete=(id)=>{if(confirm("Permanently delete? This cannot be undone.")){setProjects(prev=>prev.filter(p=>p.id!==id));setOpenMenu(null);}};
+  const createProject=(selectedMode: string)=>{const id=genId();setProjects(prev=>[...prev,blankProject(selectedMode,id)]);setActiveProjectId(id);setView("project");setTab("intake");setSec(0);setFiles({});setGenErr("");};
+  const archiveProject=(id: string)=>{setProjects(prev=>prev.map(p=>p.id===id?{...p,status:"archived"}:p));setOpenMenu(null);};
+  const deleteProject=(id: string)=>{setProjects(prev=>prev.map(p=>p.id===id?{...p,status:"deleted"}:p));setOpenMenu(null);};
+  const restoreProject=(id: string)=>{setProjects(prev=>prev.map(p=>p.id===id?{...p,status:"draft"}:p));setOpenMenu(null);};
+  const permanentDelete=(id: string)=>{if(confirm("Permanently delete? This cannot be undone.")){setProjects(prev=>prev.filter(p=>p.id!==id));setOpenMenu(null);}};
 
-  const upd=(id,v)=>{const na={...ans,[id]:v};updateActiveProject({currentAnswers:na,name:id==="product_name"?(v.trim()||activeProject?.name||"Untitled Project"):(activeProject?.name||"Untitled Project")});};
-  const addF=(id,f)=>setFiles(p=>({...p,[id]:[...(p[id]||[]),...Array.from(f)]}));
-  const rmF=(id,i)=>setFiles(p=>({...p,[id]:p[id].filter((_,j)=>j!==i)}));
-  const secProg=i=>{const s=SECTIONS[i];if(!s)return 0;return Math.round(s.questions.filter(q=>(ans[q.id]||"").trim()).length/s.questions.length*100);};
+  const upd=(id: string,v: string)=>{const na={...ans,[id]:v};updateActiveProject({currentAnswers:na,name:id==="product_name"?(v.trim()||activeProject?.name||"Untitled Project"):(activeProject?.name||"Untitled Project")});};
+  const addF=(id: string,f: FileList)=>setFiles(p=>({...p,[id]:[...(p[id]||[]),...Array.from(f)]}));
+  const rmF=(id: string,i: number)=>setFiles(p=>({...p,[id]:p[id].filter((_,j)=>j!==i)}));
+  const secProg=(i: number)=>{const s=SECTIONS[i];if(!s)return 0;return Math.round(s.questions.filter(q=>(ans[q.id]||"").trim()).length/s.questions.length*100);};
   const totAns=SECTIONS.flatMap(s=>s.questions).filter(q=>(ans[q.id]||"").trim()).length;
   const totProg=TOTAL_Q?Math.round(totAns/TOTAL_Q*100):0;
   const reqMiss=SECTIONS.flatMap(s=>s.questions).filter(q=>q.required&&!(ans[q.id]||"").trim());
   const buildIntake=()=>{let o="# PROJECT INTAKE\n\n";SECTIONS.forEach(s=>{o+=`## ${s.icon} ${s.title}\n\n`;s.questions.forEach(q=>{o+=`### ${q.label}\n${(ans[q.id]||"").trim()||"*[Not provided]*"}\n\n`;});});return o;};
-  const cp=async(t,k)=>{try{await navigator.clipboard.writeText(t);}catch{const el=document.createElement("textarea");el.value=t;document.body.appendChild(el);el.select();document.execCommand("copy");document.body.removeChild(el);}setCopied(p=>({...p,[k]:true}));setTimeout(()=>setCopied(p=>({...p,[k]:false})),2000);};
+  const cp=async(t: string,k: string)=>{try{await navigator.clipboard.writeText(t);}catch{const el=document.createElement("textarea");el.value=t;document.body.appendChild(el);el.select();document.execCommand("copy");document.body.removeChild(el);}setCopied(p=>({...p,[k]:true}));setTimeout(()=>setCopied(p=>({...p,[k]:false})),2000);};
   const save=useCallback(()=>{saveStorage({projects,activeProjectId});setFlash(true);setTimeout(()=>setFlash(false),1500);},[projects,activeProjectId]);
 
-  const getFieldStatus=(qId)=>{if(!versions.length)return null;const prev=versions[versions.length-1].ans;const o=(prev[qId]||"").trim();const n=(ans[qId]||"").trim();if(!o&&n)return"added";if(o&&!n)return"removed";if(o&&n&&o!==n)return"modified";return null;};
-  const fieldBorder=(qId)=>{const s=getFieldStatus(qId);if(s==="added")return`1px solid ${CL.green}`;if(s==="modified")return`1px solid ${CL.amber}`;if(s==="removed")return`1px solid ${CL.red}`;return`1px solid ${N.bd}`;};
-  const fieldBadge=(qId)=>{const s=getFieldStatus(qId);if(!s)return null;const c={added:{bg:"rgba(68,131,97,0.1)",color:CL.green,text:"NEW"},modified:{bg:"rgba(217,115,13,0.1)",color:CL.amber,text:"CHANGED"},removed:{bg:"rgba(235,87,87,0.1)",color:CL.red,text:"REMOVED"}}[s];return <span style={{padding:"1px 6px",borderRadius:4,background:c.bg,color:c.color,fontSize:10,fontWeight:600,marginLeft:6}}>{c.text}</span>;};
-  const loadVersion=(ver)=>{const v=versions.find(x=>x.ver===ver);if(v&&confirm(`Load V${ver} answers? Current unsaved changes will be lost.`)){updateActiveProject({currentAnswers:{...v.ans}});}};
+  const getFieldStatus=(qId: string)=>{if(!versions.length)return null;const prev=versions[versions.length-1].ans;const o=(prev[qId]||"").trim();const n=(ans[qId]||"").trim();if(!o&&n)return"added";if(o&&!n)return"removed";if(o&&n&&o!==n)return"modified";return null;};
+  const fieldBorder=(qId: string)=>{const s=getFieldStatus(qId);if(s==="added")return`1px solid ${CL.green}`;if(s==="modified")return`1px solid ${CL.amber}`;if(s==="removed")return`1px solid ${CL.red}`;return`1px solid ${N.bd}`;};
+  const fieldBadge=(qId: string)=>{const s=getFieldStatus(qId);if(!s)return null;const c={added:{bg:"rgba(68,131,97,0.1)",color:CL.green,text:"NEW"},modified:{bg:"rgba(217,115,13,0.1)",color:CL.amber,text:"CHANGED"},removed:{bg:"rgba(235,87,87,0.1)",color:CL.red,text:"REMOVED"}}[s];return <span style={{padding:"1px 6px",borderRadius:4,background:c.bg,color:c.color,fontSize:10,fontWeight:600,marginLeft:6}}>{c.text}</span>;};
+  const loadVersion=(ver: number)=>{const v=versions.find(x=>x.ver===ver);if(v&&confirm(`Load V${ver} answers? Current unsaved changes will be lost.`)){updateActiveProject({currentAnswers:{...v.ans}});}};
 
-  const renderMd=text=>{
+  const renderMd=(text: string)=>{
     if(!text)return <p style={{color:N.ts,fontStyle:"italic",fontSize:13}}>No content.</p>;
-    return text.split("\n").map((line,i)=>{
+    return text.split("\n").map((line: string,i: number)=>{
       if(line.startsWith("### "))return <h3 key={i} style={{fontSize:15,fontWeight:600,color:N.tx,margin:"16px 0 5px"}}>{line.slice(4)}</h3>;
       if(line.startsWith("## "))return <h2 key={i} style={{fontSize:18,fontWeight:700,color:N.tx,margin:"22px 0 7px"}}>{line.slice(3)}</h2>;
       if(line.startsWith("# "))return <h1 key={i} style={{fontSize:22,fontWeight:700,color:N.tx,margin:"26px 0 8px",borderBottom:`1px solid ${N.bd}`,paddingBottom:5}}>{line.slice(2)}</h1>;
@@ -334,7 +340,7 @@ export default function Cerebro(){
       if(line.match(/^\*\*Now:\*\*/))return <div key={i} style={{background:"rgba(68,131,97,0.06)",borderLeft:`3px solid ${CL.green}`,padding:"4px 10px",margin:"3px 0",fontSize:12,color:CL.green}}>{line.replace(/\*\*/g,"")}</div>;
       if(line.match(/^---+$/))return <hr key={i} style={{border:"none",borderTop:`1px solid ${N.bd}`,margin:"14px 0"}}/>;
       if(!line.trim())return <div key={i} style={{height:5}}/>;
-      const parts=line.split(/(\*\*.*?\*\*)/g).map((p,pi)=>p.startsWith("**")&&p.endsWith("**")?<strong key={pi} style={{color:N.tx,fontWeight:600}}>{p.slice(2,-2)}</strong>:p);
+      const parts=line.split(/(\*\*.*?\*\*)/g).map((p: string,pi: number)=>p.startsWith("**")&&p.endsWith("**")?<strong key={pi} style={{color:N.tx,fontWeight:600}}>{p.slice(2,-2)}</strong>:p);
       return <p key={i} style={{margin:"2px 0",color:N.ts,fontSize:13,lineHeight:1.7}}>{parts}</p>;
     });
   };
@@ -342,7 +348,7 @@ export default function Cerebro(){
   /* ── Generate ── */
   const handleGen=async()=>{
     const newVer=versions.length+1;
-    const snapshot={ver:newVer,date:new Date().toISOString(),ans:{...ans},mode:activeProject.mode};
+    const snapshot: ProjectVersion={ver:newVer,date:new Date().toISOString(),ans:{...ans},mode:activeProject?.mode||null};
     let newCB=changeBrief;
     if(newVer>1){const prevAns=versions[versions.length-1].ans;const diff=computeDiff(prevAns,ans,SECTIONS);newCB=generateChangeBrief(diff,newVer-1,newVer,ans.product_name||"Product");snapshot.changeBrief=newCB;}
     const newVersions=[...versions,snapshot];
@@ -353,21 +359,21 @@ export default function Cerebro(){
       setGenProg("Calling Claude API... (may fail due to CORS on localhost — use Copy instead)");
       const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","anthropic-version":"2023-06-01"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:16000,system:SYS,messages:[{role:"user",content:intake}]})});
       if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e?.error?.message||`API ${r.status}`);}
-      const data=await r.json();const full=data.content.filter(i=>i.type==="text").map(i=>i.text).join("\n");
-      const parts=full.split("---DOC_SEPARATOR---").map(p=>p.trim()).filter(Boolean);
-      const dm={prd:"",appFlow:"",design:"",backend:"",security:""};const ks=["prd","appFlow","design","backend","security"];
+      const data=await r.json();const full=(data.content as {type:string;text:string}[]).filter(i=>i.type==="text").map(i=>i.text).join("\n");
+      const parts=full.split("---DOC_SEPARATOR---").map((p: string)=>p.trim()).filter(Boolean);
+      const dm: Record<string,string>={prd:"",appFlow:"",design:"",backend:"",security:""};const ks=["prd","appFlow","design","backend","security"];
       if(parts.length>=5)ks.forEach((k,i)=>{dm[k]=parts[i];});else{dm.prd=full;ks.slice(1).forEach(k=>{dm[k]="[⚠️] Use Copy to Clipboard.";});}
       updateActiveProject({docs:{...dm,claudeMd:cMd,projectBrief:pB,prompts:pr,changeBrief:newCB||"No previous version to compare."},versions:newVersions,changeBrief:newCB});
       setGenProg("");
     }catch(e){
-      setGenErr(`${e.message} — Use the Copy button on the last intake section instead.`);
-      updateActiveProject({docs:{prd:"",appFlow:"",design:"",backend:"",security:"",claudeMd:cMd,projectBrief:pB,prompts:pr,changeBrief:newCB||"",_failed:true},versions:newVersions,changeBrief:newCB});
+      setGenErr(`${e instanceof Error?e.message:String(e)} — Use the Copy button on the last intake section instead.`);
+      updateActiveProject({docs:{prd:"",appFlow:"",design:"",backend:"",security:"",claudeMd:cMd,projectBrief:pB,prompts:pr,changeBrief:newCB||""},versions:newVersions,changeBrief:newCB});
       setGenProg("");
     }finally{setGenerating(false);}
   };
 
-  const switchMode=(newMode)=>{updateActiveProject({mode:newMode});setShowModeConfirm(false);setSec(0);};
-  const cycleWfStatus=(n)=>{const cur=(activeProject?.workflowStatus||DEFAULT_WF_STATUS)[n]||"notStarted";const next=cur==="notStarted"?"inProgress":cur==="inProgress"?"complete":"notStarted";updateActiveProject({workflowStatus:{...(activeProject?.workflowStatus||DEFAULT_WF_STATUS),[n]:next}});};
+  const switchMode=(newMode: string)=>{updateActiveProject({mode:newMode});setShowModeConfirm(false);setSec(0);};
+  const cycleWfStatus=(n: number)=>{const cur=(activeProject?.workflowStatus||DEFAULT_WF_STATUS)[n]||"notStarted";const next=cur==="notStarted"?"inProgress":cur==="inProgress"?"complete":"notStarted";updateActiveProject({workflowStatus:{...(activeProject?.workflowStatus||DEFAULT_WF_STATUS),[n]:next}});};
   const handleReset=()=>{if(confirm("Clear this project's current answers? Version history will be kept.")){updateActiveProject({currentAnswers:{},name:"Untitled Project"});setFiles({});setSec(0);setTab("intake");}};
   const loadTestData=()=>{updateActiveProject({currentAnswers:TEST_DATA,name:"FlowBoard"});setSec(0);setTab("intake");formRef.current?.scrollTo(0,0);};
   const createTestProject=()=>{const id=genId();const p={...blankProject("avatar",id),name:"FlowBoard",currentAnswers:TEST_DATA};setProjects(prev=>[...prev,p]);openProject(id);};
@@ -434,7 +440,7 @@ export default function Cerebro(){
                 ))}
               </div>
               {active_ps.map((p,idx)=>{
-                const st=SC[p.status]||SC.draft;
+                const st=SC[p.status as keyof typeof SC]||SC.draft;
                 return(
                   <div key={p.id} style={{display:"grid",gridTemplateColumns:"1fr 100px 80px 110px 36px",gap:8,padding:"11px 16px",borderBottom:idx<active_ps.length-1?`1px solid ${N.bd}`:"none",alignItems:"center",cursor:"pointer",position:"relative",zIndex:openMenu===p.id?200:"auto"}}
                     onClick={()=>openProject(p.id)}
@@ -511,7 +517,7 @@ export default function Cerebro(){
             onMouseEnter={e=>e.currentTarget.style.color=N.tx} onMouseLeave={e=>e.currentTarget.style.color=N.ts}>← Back to Projects</button>
           <div style={{marginBottom:32}}>
             <h1 style={{fontSize:28,fontWeight:700,color:N.tx,margin:"0 0 8px",letterSpacing:-0.5}}>Choose a mode</h1>
-            <p style={{fontSize:15,color:N.ts,margin:0}}>Select how you'd like to fill in your new project.</p>
+            <p style={{fontSize:15,color:N.ts,margin:0}}>Select how you&apos;d like to fill in your new project.</p>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
             <button onClick={()=>createProject("avatar")} style={{background:N.bg,border:`1px solid ${N.bd}`,borderRadius:8,padding:"26px 22px",cursor:"pointer",textAlign:"left",transition:"border-color .15s,box-shadow .15s"}}
@@ -543,7 +549,7 @@ export default function Cerebro(){
   ════════════════════════════════════════════════════════ */
   if(!activeProject)return null;
   const section=SECTIONS[sec];
-  const pStatus=SC[activeProject.status]||SC.draft;
+  const pStatus=SC[activeProject.status as keyof typeof SC]||SC.draft;
 
   return(
     <div style={{display:"flex",minHeight:"100vh",fontFamily:F,background:N.bg,color:N.tx}}>
@@ -590,7 +596,7 @@ export default function Cerebro(){
             return(
               <button key={t} onClick={()=>!disabled&&setTab(t)} style={{width:"100%",display:"flex",alignItems:"center",gap:7,padding:"5px 8px",borderRadius:4,border:"none",background:tab===t?N.act:"transparent",color:disabled?N.tm:(tab===t?N.tx:N.ts),cursor:disabled?"default":"pointer",fontSize:13,textAlign:"left",fontWeight:tab===t?500:400}}
                 onMouseEnter={e=>{if(!disabled&&tab!==t)e.currentTarget.style.background=N.hov;}} onMouseLeave={e=>{if(tab!==t)e.currentTarget.style.background="transparent";}}>
-                {t==="intake"&&"📝"}{t==="results"&&"📄"}{t==="versions"&&"🔄"}{t==="workflow"&&"🗺️"}{t==="usage"&&"⚡"} {TL[t]}
+                {t==="intake"&&"📝"}{t==="results"&&"📄"}{t==="versions"&&"🔄"}{t==="workflow"&&"🗺️"}{t==="usage"&&"⚡"} {TL[t as keyof typeof TL]}
               </button>
             );
           })}
@@ -711,7 +717,7 @@ export default function Cerebro(){
                   <div style={{marginTop:7,display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
                     <button onClick={()=>fR.current[q.id]?.click()} style={{display:"inline-flex",alignItems:"center",gap:3,padding:"3px 9px",borderRadius:4,border:`1px dashed ${N.bd}`,background:"transparent",color:N.ts,cursor:"pointer",fontSize:12}}
                       onMouseEnter={e=>e.currentTarget.style.borderColor=N.ts} onMouseLeave={e=>e.currentTarget.style.borderColor=N.bd}>📎 Attach</button>
-                    <input ref={el=>fR.current[q.id]=el} type="file" multiple onChange={e=>{if(e.target.files.length)addF(q.id,e.target.files);e.target.value="";}} style={{display:"none"}}/>
+                    <input ref={el=>{fR.current[q.id]=el;}} type="file" multiple onChange={e=>{if(e.target.files?.length)addF(q.id,e.target.files!);e.target.value="";}} style={{display:"none"}}/>
                     {(files[q.id]||[]).map((f,fi)=><FileChip key={fi} file={f} onRemove={()=>rmF(q.id,fi)}/>)}
                   </div>
                 </div>
@@ -860,7 +866,7 @@ export default function Cerebro(){
                     <h3 style={{fontSize:15,fontWeight:700,color:CL.amber,margin:0}}>🔄 Iteration Mode — V{currentVer}</h3>
                     <button onClick={()=>setTab("versions")} style={{padding:"5px 14px",borderRadius:5,border:"none",background:CL.amber,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:600}}>Go to Versions →</button>
                   </div>
-                  <p style={{fontSize:13,color:N.ts,margin:0,lineHeight:1.5}}>You're on V{currentVer}. Instead of running all build sessions again, use the Change Brief from the Versions tab. It contains only what changed and a ready-to-paste Claude Code prompt for surgical updates.</p>
+                  <p style={{fontSize:13,color:N.ts,margin:0,lineHeight:1.5}}>You&apos;re on V{currentVer}. Instead of running all build sessions again, use the Change Brief from the Versions tab. It contains only what changed and a ready-to-paste Claude Code prompt for surgical updates.</p>
                 </div>
               )}
 
