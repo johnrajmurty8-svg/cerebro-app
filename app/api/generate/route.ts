@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export const maxDuration = 600;
+export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 590000);
+    const timeout = setTimeout(() => controller.abort(), 280000);
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
