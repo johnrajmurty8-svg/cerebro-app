@@ -357,7 +357,7 @@ export default function Cerebro(){
     const intake=buildIntake(),cMd=genClaudeMd(ans),pB=genBrief(ans),pr=genPrompts(ans);
     try{
       setGenProg("Calling Claude API... (may fail due to CORS on localhost — use Copy instead)");
-      const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","anthropic-version":"2023-06-01"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:16000,system:SYS,messages:[{role:"user",content:intake}]})});
+      const r=await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:SYS,messages:[{role:"user",content:intake}]})});
       if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e?.error?.message||`API ${r.status}`);}
       const data=await r.json();const full=(data.content as {type:string;text:string}[]).filter(i=>i.type==="text").map(i=>i.text).join("\n");
       const parts=full.split("---DOC_SEPARATOR---").map((p: string)=>p.trim()).filter(Boolean);
