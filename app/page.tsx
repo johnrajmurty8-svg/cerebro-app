@@ -356,13 +356,19 @@ export default function Cerebro(){
     setGenerating(true);setGenErr("");setGenProg("Preparing...");setTab("results");
     const intake=buildIntake(),cMd=genClaudeMd(ans),pB=genBrief(ans),pr=genPrompts(ans);
     try{
-      setGenProg("Calling Claude API... (may fail due to CORS on localhost — use Copy instead)");
-      const r=await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:SYS,messages:[{role:"user",content:intake}]})});
-      if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e?.error?.message||`API ${r.status}`);}
-      const data=await r.json();const full=(data.content as {type:string;text:string}[]).filter(i=>i.type==="text").map(i=>i.text).join("\n");
-      const parts=full.split("---DOC_SEPARATOR---").map((p: string)=>p.trim()).filter(Boolean);
-      const dm: Record<string,string>={prd:"",appFlow:"",design:"",backend:"",security:""};const ks=["prd","appFlow","design","backend","security"];
-      if(parts.length>=5)ks.forEach((k,i)=>{dm[k]=parts[i];});else{dm.prd=full;ks.slice(1).forEach(k=>{dm[k]="[⚠️] Use Copy to Clipboard.";});}
+      const callAPI=async(sys: string)=>{const r=await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:sys,messages:[{role:"user",content:intake}]})});if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e?.error?.message||`API ${r.status}`);}const data=await r.json();return(data.content as {type:string;text:string}[]).filter(i=>i.type==="text").map(i=>i.text).join("\n");};
+      const SYS1=`You are a senior product/technical lead. Generate exactly 3 docs separated by "---DOC_SEPARATOR---". Each starts "# DOC_N: Title". DOC1: PRD (14 sections, FR-001 IDs, acceptance criteria, MoSCoW). DOC2: App Flow (routes, actions, conditionals). DOC3: UI Guide/DESIGN.md (tokens, components, breakpoints). Flag gaps with [⚠️ ATTENTION NEEDED]. 600-1000 words each.`;
+      const SYS2=`You are a senior product/technical lead. Generate exactly 2 docs separated by "---DOC_SEPARATOR---". Each starts "# DOC_N: Title". DOC4: Backend (data models, API endpoints, services). DOC5: Security (auth, encryption, OWASP, compliance). Flag gaps with [⚠️ ATTENTION NEEDED]. 600-1000 words each.`;
+      setGenProg("Generating PRD, App Flow & UI Guide… (1/2)");
+      const full1=await callAPI(SYS1);
+      setGenProg("Generating Backend & Security docs… (2/2)");
+      const full2=await callAPI(SYS2);
+      const parts1=full1.split("---DOC_SEPARATOR---").map((p: string)=>p.trim()).filter(Boolean);
+      const parts2=full2.split("---DOC_SEPARATOR---").map((p: string)=>p.trim()).filter(Boolean);
+      const dm: Record<string,string>={prd:"",appFlow:"",design:"",backend:"",security:""};
+      const ks=["prd","appFlow","design","backend","security"];
+      const allParts=[...parts1,...parts2];
+      ks.forEach((k,i)=>{if(allParts[i])dm[k]=allParts[i];});
       updateActiveProject({docs:{...dm,claudeMd:cMd,projectBrief:pB,prompts:pr,changeBrief:newCB||"No previous version to compare."},versions:newVersions,changeBrief:newCB});
       setGenProg("");
     }catch(e){
