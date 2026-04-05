@@ -6,7 +6,9 @@ type QuestionDef = { id: string; label: string; type: string; placeholder: strin
 type SectionDef = { id: string; title: string; icon: string; description: string; questions: QuestionDef[]; };
 type DiffChange = { id: string; label: string; section: string; oldVal?: string; newVal?: string; };
 type DiffResult = { added: DiffChange[]; modified: DiffChange[]; removed: DiffChange[]; unchanged: number; };
-type Project = { id: string; name: string; status: string; mode: string | null; created: string; lastEdited: string; currentAnswers: Record<string, string>; versions: ProjectVersion[]; docs: Record<string, string> | null; changeBrief: string; workflowStatus: WorkflowStatus; };
+type DocxFileEntry = { name: string; data: string; uploadedAt: string };
+type MdUploadEntry = { name: string; content: string; uploadedAt: string };
+type Project = { id: string; name: string; status: string; mode: string | null; created: string; lastEdited: string; currentAnswers: Record<string, string>; versions: ProjectVersion[]; docs: Record<string, string> | null; changeBrief: string; workflowStatus: WorkflowStatus; docxFiles?: Record<string, DocxFileEntry[]>; docSources?: Record<string, "api" | "uploaded" | "pasted">; mdUploads?: Record<string, MdUploadEntry[]>; };
 // NOTE: Anthropic API calls from localhost will fail with CORS.
 // PRIMARY FLOW: Use the 📋 Copy button on the last intake section,
 // then paste into Claude.ai to generate your documents.
@@ -137,7 +139,51 @@ const SPIRIT=[
 ];
 
 /* ═══ System prompt, generators ═══ */
-const SYS=`You are a senior product/technical lead. Generate 5 docs separated by "---DOC_SEPARATOR---". Each starts "# DOC_N: Title" (N=1-5). DOC1: PRD (14 sections, FR-001 IDs, acceptance criteria, MoSCoW). DOC2: App Flow (routes, actions, conditionals). DOC3: UI Guide/DESIGN.md (tokens, components, breakpoints). DOC4: Backend (data models, API endpoints, services). DOC5: Security (auth, encryption, OWASP, compliance). Flag gaps with [⚠️ ATTENTION NEEDED]. 800-2000 words each.`;
+const SYS=`You are a senior product/technical lead generating a complete build package from a product intake form. You must produce 10 files total — 5 Markdown files and 5 matching Word documents (.docx).
+
+## OUTPUT FORMAT
+
+Generate each document as a clearly separated section using this exact format:
+
+---FILE: [filename]---
+[full document content]
+---END FILE---
+
+The 10 files you must produce, in order:
+
+### Markdown Files (for Claude Code / AI tools)
+1. **prd.md** — Product Requirements Document. 14 sections: Document Control, Problem Statement, User Personas, Goals & Metrics, Functional Requirements (grouped by Epic with FR-001 IDs, acceptance criteria, MoSCoW priority), Non-Functional Requirements, Scope (in/out), Technical Architecture, Release Plan, Go/No-Go Criteria, Risks & Mitigations, Open Questions. 1000-2000 words.
+2. **app-flow.md** — App Flow & Navigation. Route map (every URL), authentication flow, onboarding flow, main app layout, screen-by-screen interaction flows (what loads, what user does, what happens), error & edge cases. 800-1500 words.
+3. **design.md** — UI Design Guide (DESIGN.md). Design tokens (colors with hex values, typography scale, spacing, radius, shadows), breakpoints with responsive behavior, component specifications (dimensions, states, styling), motion & animation specs, iconography. 800-1500 words.
+4. **backend-spec.md** — Backend Specification. Data models (every table with fields, types, constraints, relationships), API endpoints (route, method, description), services (what each does), environment variables list, folder structure. 1000-2000 words.
+5. **security-checklist.md** — Security Checklist. Authentication (provider, session management), authorization (RBAC model, row-level security), encryption (transit, rest, secrets), input validation, OWASP Top 10 coverage table, integration security (per external service), API headers, compliance (GDPR, SOC2 as applicable), AI-specific security, incident response. 800-1500 words.
+
+### Word Documents (.docx) (for stakeholder sharing)
+6. **prd.docx** — Same content as prd.md, formatted as a professional Word document with branded header/footer, styled tables for requirements, color-coded priority labels, attention boxes for flagged items.
+7. **app-flow.docx** — Same content as app-flow.md, formatted as a professional Word document with route table, numbered flow steps, and attention boxes.
+8. **design.docx** — Same content as design.md, formatted as a professional Word document with token tables, component spec sections, and breakpoint matrix.
+9. **backend-spec.docx** — Same content as backend-spec.md, formatted as a professional Word document with data model tables, endpoint tables, and service descriptions.
+10. **security-checklist.docx** — Same content as security-checklist.md, formatted as a professional Word document with OWASP coverage table, compliance checklists, and attention boxes.
+
+## WORD DOCUMENT FORMATTING REQUIREMENTS
+All .docx files must:
+- Use Arial font, 11pt body text
+- Include a branded title page with product name (large, bold), document type subtitle, and one-liner description
+- Include header with product name + document type, and footer with page numbers + "Confidential"
+- Use professional table formatting: colored header rows, consistent borders, cell padding
+- Use attention/warning boxes with amber left-border and yellow background for [⚠️ ATTENTION NEEDED] items
+- Be print-ready and suitable for sharing with stakeholders, investors, or cross-functional teams
+
+## RULES
+- Flag ambiguities or missing info with [⚠️ ATTENTION NEEDED] — never invent answers
+- Use the product name from the intake in all headers and titles
+- Every functional requirement needs a unique ID (FR-001, FR-002, etc.), a MoSCoW priority, and acceptance criteria
+- Data models must include field names, types, constraints (PK, FK, NOT NULL, UNIQUE), and relationships
+- Design tokens must include actual hex color values, not just descriptions
+- The .md files should be usable by Claude Code with no further editing
+- The .docx files should be ready to share with non-technical stakeholders with no further editing
+
+Below is the complete project intake form. Generate all 10 files from this information.`;
 
 function genClaudeMd(a: Record<string,string>){return `# ${a.product_name||"Product"} — Claude Code Instructions\n\n## Overview\n${a.one_liner||"See project-brief.md"}\n\n## Stack\n${a.tech_stack||"Best modern stack"}\n\n## Rules\n- Read project-brief.md FIRST\n- plan.md before coding — wait for approval\n- Follow design.md, backend-spec.md, security-checklist.md, app-flow.md\n- TypeScript, tests, small components, env vars\n\n## Workflow\n1. Read doc → 2. Plan → 3. Approve → 4. Build → 5. Test → 6. Report\n\n## Principles\nSimplicity. No shortcuts. Minimal impact. Ask when unsure.`;}
 function genBrief(a: Record<string,string>){return `# ${a.product_name||"Product"} — Brief\n\n> ${a.one_liner||""}\n\nOwner: ${a.author||"TBD"} | Launch: ${a.target_date||"TBD"} | Team: ${a.team_size||"Solo+AI"}\n\n## Build Order\n1. Setup 2. DB+Auth 3. API 4. UI Shell 5. Features 6. Polish 7. Deploy\n\n## Docs\nprd.md, app-flow.md, design.md, backend-spec.md, security-checklist.md, CLAUDE.md`;}
@@ -153,7 +199,17 @@ function FileChip({file,onRemove}: {file: File, onRemove: ()=>void}){return <spa
 
 const TABS=["intake","results","versions","workflow","usage"];
 const TL={intake:"Intake",results:"Docs",versions:"Versions",workflow:"Workflow",usage:"Usage"};
-const DT=[{key:"prd",label:"PRD",file:"prd.md"},{key:"appFlow",label:"App Flow",file:"app-flow.md"},{key:"design",label:"UI Guide",file:"design.md"},{key:"backend",label:"Backend",file:"backend-spec.md"},{key:"security",label:"Security",file:"security-checklist.md"},{key:"claudeMd",label:"CLAUDE.md",file:"CLAUDE.md"},{key:"projectBrief",label:"Brief",file:"project-brief.md"},{key:"prompts",label:"Prompts",file:"prompts.md"},{key:"changeBrief",label:"Changes",file:"change-brief.md"}];
+const DT=[
+  {key:"prd",label:"📋 PRD",file:"prd.md + prd.docx",uploadable:true,accepts:{md:".md,.txt,.markdown",docx:".docx"}},
+  {key:"appFlow",label:"🗺️ Flow",file:"app-flow.md + app-flow.docx",uploadable:true,accepts:{md:".md,.txt,.markdown",docx:".docx"}},
+  {key:"design",label:"🎨 UI",file:"design.md + design.docx",uploadable:true,accepts:{md:".md,.txt,.markdown",docx:".docx"}},
+  {key:"backend",label:"⚙️ Backend",file:"backend-spec.md + backend-spec.docx",uploadable:true,accepts:{md:".md,.txt,.markdown",docx:".docx"}},
+  {key:"security",label:"🛡️ Security",file:"security-checklist.md + security-checklist.docx",uploadable:true,accepts:{md:".md,.txt,.markdown",docx:".docx"}},
+  {key:"claudeMd",label:"🤖 CLAUDE",file:"CLAUDE.md",uploadable:false},
+  {key:"projectBrief",label:"📦 Brief",file:"project-brief.md",uploadable:false},
+  {key:"prompts",label:"💬 Prompts",file:"prompts.md",uploadable:false},
+  {key:"changeBrief",label:"🔄 Changes",file:"change-brief.md",uploadable:false},
+];
 
 /* ═══ STORAGE HELPERS ═══ */
 const genId=()=>`proj_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
@@ -258,6 +314,9 @@ export default function Cerebro(){
   const [activeDoc,setActiveDoc]=useState("prd");
   const [files,setFiles]=useState<Record<string,File[]>>({});
   const [showModeConfirm,setShowModeConfirm]=useState(false);
+  const [pasteContent,setPasteContent]=useState<Record<string,string>>({});
+  const [showPaste,setShowPaste]=useState<Record<string,boolean>>({});
+  const [zipLoading,setZipLoading]=useState<Record<string,boolean>>({});
   const [expandedSession,setExpandedSession]=useState<number|null>(null);
   const fR=useRef<Record<string,HTMLInputElement|null>>({});
   const formRef=useRef<HTMLDivElement>(null);
@@ -272,6 +331,9 @@ export default function Cerebro(){
   const ans=activeProject?.currentAnswers||{};
   const versions=activeProject?.versions||[];
   const docs=activeProject?.docs||null;
+  const docxFiles=activeProject?.docxFiles||{};
+  const docSources=activeProject?.docSources||{};
+  const mdUploads=activeProject?.mdUploads||{};
   const changeBrief=activeProject?.changeBrief||"";
   const mode=activeProject?.mode||null;
   const currentVer=versions.length;
@@ -320,6 +382,216 @@ export default function Cerebro(){
   const reqMiss=SECTIONS.flatMap(s=>s.questions).filter(q=>q.required&&!(ans[q.id]||"").trim());
   const buildIntake=()=>{let o="# PROJECT INTAKE\n\n";SECTIONS.forEach(s=>{o+=`## ${s.icon} ${s.title}\n\n`;s.questions.forEach(q=>{o+=`### ${q.label}\n${(ans[q.id]||"").trim()||"*[Not provided]*"}\n\n`;});});return o;};
   const cp=async(t: string,k: string)=>{try{await navigator.clipboard.writeText(t);}catch{const el=document.createElement("textarea");el.value=t;document.body.appendChild(el);el.select();document.execCommand("copy");document.body.removeChild(el);}setCopied(p=>({...p,[k]:true}));setTimeout(()=>setCopied(p=>({...p,[k]:false})),2000);};
+  const downloadMd = (key: string) => {
+    const content = key === "changeBrief" ? changeBrief : docs?.[key];
+    if (!content) return;
+    const fileName = DT.find(d => d.key === key)?.file || `${key}.md`;
+    const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const downloadDocx = async (key: string) => {
+    const content = key === "changeBrief" ? changeBrief : docs?.[key];
+    if (!content) return;
+    const dtEntry = DT.find(d => d.key === key);
+    const fileName = dtEntry?.file?.replace(".md", ".docx") || `${key}.docx`;
+    const docTitle = dtEntry?.label?.replace(/^[^\w]+/, "").trim() || key;
+    const productName = ans?.product_name || "CEREBRO Project";
+    try {
+      const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, HeadingLevel, AlignmentType, WidthType, ShadingType, BorderStyle } = await import("docx");
+      const lines = content.split("\n");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const bodyChildren: any[] = [];
+      for (const line of lines) {
+        if (line.startsWith("### ")) {
+          bodyChildren.push(new Paragraph({ heading: HeadingLevel.HEADING_3, children: [new TextRun({ text: line.slice(4), bold: true, color: "4A90D9", size: 24 })] }));
+        } else if (line.startsWith("## ")) {
+          bodyChildren.push(new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun({ text: line.slice(3), bold: true, color: "60A5FA", size: 28 })] }));
+        } else if (line.startsWith("# ")) {
+          bodyChildren.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: line.slice(2), bold: true, color: "93C5FD", size: 32 })] }));
+        } else if (line.match(/^[-*]\s/)) {
+          bodyChildren.push(new Paragraph({ bullet: { level: 0 }, children: [new TextRun({ text: line.slice(2), size: 22, color: "CBD5E1" })] }));
+        } else if (line.match(/^---+$/)) {
+          bodyChildren.push(new Paragraph({ border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: "334155", space: 1 } }, children: [new TextRun("")] }));
+        } else if (!line.trim()) {
+          bodyChildren.push(new Paragraph({ children: [new TextRun("")] }));
+        } else {
+          const parts = line.split(/(\*\*.*?\*\*)/g);
+          const runs = parts.map((p: string) => p.startsWith("**") && p.endsWith("**")
+            ? new TextRun({ text: p.slice(2, -2), bold: true, size: 22, color: "E2E8F0" })
+            : new TextRun({ text: p, size: 22, color: "CBD5E1" }));
+          bodyChildren.push(new Paragraph({ children: runs }));
+        }
+      }
+      const headerTable = new Table({
+        width: { size: 9360, type: WidthType.DXA },
+        columnWidths: [9360],
+        rows: [new TableRow({ children: [new TableCell({
+          width: { size: 9360, type: WidthType.DXA },
+          shading: { fill: "0F172A", type: ShadingType.CLEAR },
+          margins: { top: 200, bottom: 200, left: 300, right: 300 },
+          borders: { top: { style: BorderStyle.NONE }, bottom: { style: BorderStyle.SINGLE, size: 6, color: "3B82F6" }, left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE } },
+          children: [
+            new Paragraph({ alignment: AlignmentType.LEFT, children: [new TextRun({ text: "🧠 CEREBRO", bold: true, size: 28, color: "3B82F6", font: "Arial" }), new TextRun({ text: "  ·  Master Build Package Generator", size: 20, color: "64748B", font: "Arial" })] }),
+            new Paragraph({ alignment: AlignmentType.LEFT, children: [new TextRun({ text: productName, bold: true, size: 24, color: "E2E8F0", font: "Arial" }), new TextRun({ text: `  ·  ${docTitle}`, size: 20, color: "94A3B8", font: "Arial" })] }),
+            new Paragraph({ alignment: AlignmentType.LEFT, children: [new TextRun({ text: `Generated: ${new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}`, size: 18, color: "475569", font: "Arial", italics: true })] }),
+          ],
+        })]})],
+      });
+      const doc = new Document({
+        styles: { default: { document: { run: { font: "Arial", size: 22, color: "CBD5E1" } } } },
+        sections: [{ properties: { page: { size: { width: 12240, height: 15840 }, margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 } } }, children: [headerTable, new Paragraph({ children: [new TextRun("")] }), ...bodyChildren] }],
+      });
+      const blob = await Packer.toBlob(doc);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("docx generation failed:", err);
+      alert("Could not generate .docx — downloading .md instead.");
+      downloadMd(key);
+    }
+  };
+  const downloadAllMd = async () => {
+    setZipLoading(p => ({ ...p, md: true }));
+    try {
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+      const fileMap: Record<string, string> = {
+        prd: "prd.md", appFlow: "app-flow.md", design: "design.md",
+        backend: "backend-spec.md", security: "security-checklist.md",
+        claudeMd: "CLAUDE.md", projectBrief: "project-brief.md", prompts: "startup-prompts.md",
+      };
+      Object.entries(fileMap).forEach(([key, filename]) => {
+        const content = docs?.[key];
+        if (content && content.trim()) zip.file(filename, content);
+      });
+      if (changeBrief && changeBrief.trim()) zip.file("change-brief.md", changeBrief);
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(ans.product_name || "project").replace(/\s+/g, "-").toLowerCase()}-docs-md.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setZipLoading(p => ({ ...p, md: false }));
+    }
+  };
+
+  const downloadAllDocx = async () => {
+    setZipLoading(p => ({ ...p, docx: true }));
+    try {
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+      Object.entries(docxFiles).forEach(([, files]) => {
+        if (Array.isArray(files)) {
+          files.forEach(f => {
+            const byteString = atob(f.data.split(",")[1]);
+            const ab = new ArrayBuffer(byteString.length);
+            const ia = new Uint8Array(ab);
+            for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+            zip.file(f.name, ab);
+          });
+        }
+      });
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(ans.product_name || "project").replace(/\s+/g, "-").toLowerCase()}-docs-docx.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setZipLoading(p => ({ ...p, docx: false }));
+    }
+  };
+
+  const handleMdUpload = (key: string, file: File) => {
+    if (file.size > 5 * 1024 * 1024) { alert("File too large (max 5MB)"); return; }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target?.result as string;
+      const emptyDocs = { prd: "", appFlow: "", design: "", backend: "", security: "", claudeMd: "", projectBrief: "", prompts: "", changeBrief: "" };
+      const newEntry: MdUploadEntry = { name: file.name, content, uploadedAt: new Date().toISOString() };
+      updateActiveProject({
+        docs: { ...(docs || emptyDocs), [key]: content },
+        docSources: { ...docSources, [key]: "uploaded" },
+        mdUploads: { ...mdUploads, [key]: [...(mdUploads[key] || []), newEntry] },
+      });
+    };
+    reader.readAsText(file);
+  };
+
+  const handleDocxUpload = (key: string, file: File) => {
+    if (file.size > 5 * 1024 * 1024) { alert("File too large (max 5MB)"); return; }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const newEntry: DocxFileEntry = { name: file.name, data: e.target?.result as string, uploadedAt: new Date().toISOString() };
+        updateActiveProject({ docxFiles: { ...docxFiles, [key]: [...(docxFiles[key] || []), newEntry] } });
+      } catch {
+        alert("File too large to store locally. Save it to your project folder instead.");
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handlePaste = (key: string, content: string) => {
+    const emptyDocs = { prd: "", appFlow: "", design: "", backend: "", security: "", claudeMd: "", projectBrief: "", prompts: "", changeBrief: "" };
+    updateActiveProject({ docs: { ...(docs || emptyDocs), [key]: content }, docSources: { ...docSources, [key]: "pasted" } });
+    setPasteContent(p => ({ ...p, [key]: "" }));
+    setShowPaste(p => ({ ...p, [key]: false }));
+  };
+
+  const downloadUploadedDocx = (key: string, index: number) => {
+    const files = docxFiles[key];
+    if (!files || !files[index]) return;
+    const file = files[index];
+    const byteString = atob(file.data.split(",")[1]);
+    const ab = new ArrayBuffer(byteString.length);
+    const ia = new Uint8Array(ab);
+    for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+    const blob = new Blob([ab], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = file.name; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadUploadedMd = (entry: MdUploadEntry) => {
+    const blob = new Blob([entry.content], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = entry.name; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const deleteMdUpload = (key: string, index: number) => {
+    if (!confirm(`Remove "${mdUploads[key]?.[index]?.name}"?`)) return;
+    const updated = (mdUploads[key] || []).filter((_, i) => i !== index);
+    const newMdUploads = { ...mdUploads, [key]: updated };
+    // If the deleted file was the displayed one and there are others, show the last one
+    const remaining = updated;
+    const emptyDocs = { prd: "", appFlow: "", design: "", backend: "", security: "", claudeMd: "", projectBrief: "", prompts: "", changeBrief: "" };
+    const newDocs = remaining.length > 0
+      ? { ...(docs || emptyDocs), [key]: remaining[remaining.length - 1].content }
+      : { ...(docs || emptyDocs), [key]: "" };
+    updateActiveProject({ mdUploads: newMdUploads, docs: newDocs });
+  };
+
+  const deleteDocxUpload = (key: string, index: number) => {
+    if (!confirm(`Remove "${docxFiles[key]?.[index]?.name}"?`)) return;
+    const updated = (docxFiles[key] || []).filter((_, i) => i !== index);
+    updateActiveProject({ docxFiles: { ...docxFiles, [key]: updated } });
+  };
   const save=useCallback(()=>{saveStorage({projects,activeProjectId});setFlash(true);setTimeout(()=>setFlash(false),1500);},[projects,activeProjectId]);
 
   const getFieldStatus=(qId: string)=>{if(!versions.length)return null;const prev=versions[versions.length-1].ans;const o=(prev[qId]||"").trim();const n=(ans[qId]||"").trim();if(!o&&n)return"added";if(o&&!n)return"removed";if(o&&n&&o!==n)return"modified";return null;};
@@ -346,29 +618,58 @@ export default function Cerebro(){
   };
 
   /* ── Generate ── */
-  const handleGen=async()=>{
+  const saveVersionSnapshot=()=>{
     const newVer=versions.length+1;
     const snapshot: ProjectVersion={ver:newVer,date:new Date().toISOString(),ans:{...ans},mode:activeProject?.mode||null};
     let newCB=changeBrief;
     if(newVer>1){const prevAns=versions[versions.length-1].ans;const diff=computeDiff(prevAns,ans,SECTIONS);newCB=generateChangeBrief(diff,newVer-1,newVer,ans.product_name||"Product");snapshot.changeBrief=newCB;}
     const newVersions=[...versions,snapshot];
     updateActiveProject({versions:newVersions,changeBrief:newCB});
+    return{newVersions,newCB};
+  };
+
+  const handleCopyPrompt=()=>{
+    saveVersionSnapshot();
+    cp(SYS+"\n\n---\n\n"+buildIntake(),"cb");
+  };
+
+  const handleGen=async()=>{
+    const{newVersions,newCB}=saveVersionSnapshot();
     setGenerating(true);setGenErr("");setGenProg("Preparing...");setTab("results");
     const intake=buildIntake(),cMd=genClaudeMd(ans),pB=genBrief(ans),pr=genPrompts(ans);
     try{
       const callAPI=async(sys: string)=>{const r=await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:sys,messages:[{role:"user",content:intake}]})});if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e?.error?.message||`API ${r.status}`);}const data=await r.json();return(data.content as {type:string;text:string}[]).filter(i=>i.type==="text").map(i=>i.text).join("\n");};
-      const SYS1=`You are a senior product/technical lead. Generate exactly 3 docs separated by "---DOC_SEPARATOR---". Each starts "# DOC_N: Title". DOC1: PRD (14 sections, FR-001 IDs, acceptance criteria, MoSCoW). DOC2: App Flow (routes, actions, conditionals). DOC3: UI Guide/DESIGN.md (tokens, components, breakpoints). Flag gaps with [⚠️ ATTENTION NEEDED]. 600-1000 words each.`;
-      const SYS2=`You are a senior product/technical lead. Generate exactly 2 docs separated by "---DOC_SEPARATOR---". Each starts "# DOC_N: Title". DOC4: Backend (data models, API endpoints, services). DOC5: Security (auth, encryption, OWASP, compliance). Flag gaps with [⚠️ ATTENTION NEEDED]. 600-1000 words each.`;
+      const SYS1=`You are a senior product/technical lead generating part of a build package. Produce exactly 3 files using this format:\n\n---FILE: [filename]---\n[content]\n---END FILE---\n\nFiles to produce:\n1. prd.md — PRD (14 sections, FR-001 IDs, acceptance criteria, MoSCoW priority). 800-1000 words.\n2. app-flow.md — App Flow (every route, auth flow, screen-by-screen interactions). 600-800 words.\n3. design.md — UI Design Guide (design tokens with hex values, components, breakpoints). 600-800 words.\n\nFlag gaps with [⚠️ ATTENTION NEEDED]. Use the product name in all headers.`;
+      const SYS2=`You are a senior product/technical lead generating part of a build package. Produce exactly 2 files using this format:\n\n---FILE: [filename]---\n[content]\n---END FILE---\n\nFiles to produce:\n1. backend-spec.md — Backend Spec (data models with fields/types/constraints, API endpoints, services, env vars, folder structure). 800-1000 words.\n2. security-checklist.md — Security Checklist (auth, RBAC, encryption, OWASP Top 10 table, compliance, incident response). 600-800 words.\n\nFlag gaps with [⚠️ ATTENTION NEEDED]. Use the product name in all headers.`;
       setGenProg("Generating PRD, App Flow & UI Guide… (1/2)");
       const full1=await callAPI(SYS1);
       setGenProg("Generating Backend & Security docs… (2/2)");
       const full2=await callAPI(SYS2);
-      const parts1=full1.split("---DOC_SEPARATOR---").map((p: string)=>p.trim()).filter(Boolean);
-      const parts2=full2.split("---DOC_SEPARATOR---").map((p: string)=>p.trim()).filter(Boolean);
+      const fileMap: Record<string,string>={
+        "prd.md":"prd","app-flow.md":"appFlow","design.md":"design",
+        "backend-spec.md":"backend","security-checklist.md":"security"
+      };
+      const parseFiles=(raw: string,dm: Record<string,string>)=>{
+        const fileRegex=/---FILE:\s*(.+?)---\s*\n([\s\S]*?)---END FILE---/g;
+        let m;
+        while((m=fileRegex.exec(raw))!==null){
+          const fname=m[1].trim();const content=m[2].trim();
+          const key=fileMap[fname];
+          if(key&&fname.endsWith(".md"))dm[key]=content;
+        }
+      };
       const dm: Record<string,string>={prd:"",appFlow:"",design:"",backend:"",security:""};
-      const ks=["prd","appFlow","design","backend","security"];
-      const allParts=[...parts1,...parts2];
-      ks.forEach((k,i)=>{if(allParts[i])dm[k]=allParts[i];});
+      parseFiles(full1,dm);
+      parseFiles(full2,dm);
+      // Fallback: old ---DOC_SEPARATOR--- format
+      if(!dm.prd){
+        const parts1=full1.split("---DOC_SEPARATOR---").map((p: string)=>p.trim()).filter(Boolean);
+        const parts2=full2.split("---DOC_SEPARATOR---").map((p: string)=>p.trim()).filter(Boolean);
+        const ks=["prd","appFlow","design","backend","security"];
+        const allParts=[...parts1,...parts2];
+        if(allParts.length>=5)ks.forEach((k,i)=>{if(allParts[i])dm[k]=allParts[i];});
+        else{dm.prd=full1+"\n\n"+full2;ks.slice(1).forEach(k=>{dm[k]="[⚠️] Use Copy to Clipboard — paste the prompt into a new Claude chat (Opus recommended) to generate all documents.";});}
+      }
       updateActiveProject({docs:{...dm,claudeMd:cMd,projectBrief:pB,prompts:pr,changeBrief:newCB||"No previous version to compare."},versions:newVersions,changeBrief:newCB});
       setGenProg("");
     }catch(e){
@@ -598,7 +899,7 @@ export default function Cerebro(){
           {/* Tab nav */}
           <div style={{fontSize:11,fontWeight:600,color:N.tm,padding:"2px 8px 4px",letterSpacing:.5,textTransform:"uppercase"}}>Navigation</div>
           {TABS.map(t=>{
-            const disabled=!["intake","versions","usage"].includes(t)&&!docs&&!generating;
+            const disabled=!["intake","results","versions","usage"].includes(t)&&!docs&&!generating;
             return(
               <button key={t} onClick={()=>!disabled&&setTab(t)} style={{width:"100%",display:"flex",alignItems:"center",gap:7,padding:"5px 8px",borderRadius:4,border:"none",background:tab===t?N.act:"transparent",color:disabled?N.tm:(tab===t?N.tx:N.ts),cursor:disabled?"default":"pointer",fontSize:13,textAlign:"left",fontWeight:tab===t?500:400}}
                 onMouseEnter={e=>{if(!disabled&&tab!==t)e.currentTarget.style.background=N.hov;}} onMouseLeave={e=>{if(tab!==t)e.currentTarget.style.background="transparent";}}>
@@ -728,6 +1029,36 @@ export default function Cerebro(){
                   </div>
                 </div>
               ))}
+
+              {/* Generation options panel — only on last section */}
+              {sec===SECTIONS.length-1&&(
+                <div style={{marginTop:32,padding:"24px",border:`1px solid ${N.bd}`,borderRadius:12,background:N.sbg}}>
+                  <h3 style={{fontSize:17,fontWeight:700,color:N.tx,margin:"0 0 4px"}}>🚀 Ready to Generate</h3>
+                  <p style={{fontSize:13,color:N.ts,margin:"0 0 20px"}}>Choose how you&apos;d like to create your build package:</p>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+                    {/* Card 1 — Copy Prompt */}
+                    <div style={{border:`1px solid ${N.bd}`,borderRadius:8,padding:"18px 18px 16px",background:N.bg}}>
+                      <div style={{fontSize:20,marginBottom:8}}>📋</div>
+                      <p style={{fontSize:14,fontWeight:600,color:N.tx,margin:"0 0 6px"}}>Copy Prompt to Clipboard</p>
+                      <p style={{fontSize:12,color:N.ts,margin:"0 0 16px",lineHeight:1.6}}>Paste into a new Claude chat (Opus recommended). You&apos;ll get 10 files back (5 .md + 5 .docx) which you can upload here.</p>
+                      <button onClick={handleCopyPrompt}
+                        style={{padding:"7px 16px",borderRadius:6,border:`1px solid ${N.bd}`,background:copied.cb?"rgba(68,131,97,0.08)":N.bg,color:copied.cb?CL.green:N.ts,cursor:"pointer",fontSize:13,fontWeight:500}}>
+                        {copied.cb?"✓ Copied!":"📋 Copy Prompt"}</button>
+                    </div>
+                    {/* Card 2 — Generate via API */}
+                    <div style={{border:`1px solid ${N.bd}`,borderRadius:8,padding:"18px 18px 16px",background:N.bg}}>
+                      <div style={{fontSize:20,marginBottom:8}}>⚡</div>
+                      <p style={{fontSize:14,fontWeight:600,color:N.tx,margin:"0 0 6px"}}>Generate via API</p>
+                      <p style={{fontSize:12,color:N.ts,margin:"0 0 16px",lineHeight:1.6}}>Calls the Claude API directly. Results appear in the Docs tab. Requires API access (may not work on localhost).</p>
+                      <button onClick={handleGen} disabled={reqMiss.length>0}
+                        style={{padding:"7px 16px",borderRadius:6,border:"none",background:reqMiss.length>0?N.hov:CL.green,color:reqMiss.length>0?N.tm:"#fff",cursor:reqMiss.length>0?"default":"pointer",fontSize:13,fontWeight:500}}>
+                        ⚡ Generate V{currentVer+1}</button>
+                      {reqMiss.length>0&&<p style={{margin:"6px 0 0",fontSize:11,color:CL.red}}>Complete required fields first</p>}
+                    </div>
+                  </div>
+                  <p style={{margin:0,fontSize:12,color:N.ts,lineHeight:1.6}}>ℹ️ Both methods save a V{currentVer+1} snapshot of your answers. Edit your answers and regenerate to create V{currentVer+2} with a Change Brief.</p>
+                </div>
+              )}
             </div>
 
             {/* Bottom nav */}
@@ -745,14 +1076,7 @@ export default function Cerebro(){
               {sec<SECTIONS.length-1
                 ?<button onClick={()=>{setSec(sec+1);formRef.current?.scrollTo(0,0);}}
                     style={{padding:"7px 18px",borderRadius:6,border:"none",background:accent,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:500}}>Next →</button>
-                :<div style={{display:"flex",gap:8}}>
-                    <button onClick={()=>cp(SYS+"\n\n---\n\n"+buildIntake(),"cb")}
-                      style={{padding:"7px 14px",borderRadius:6,border:`1px solid ${N.bd}`,background:copied.cb?"rgba(68,131,97,0.08)":N.bg,color:copied.cb?CL.green:N.ts,cursor:"pointer",fontSize:13}}>
-                      {copied.cb?"Copied ✓":"📋 Copy"}</button>
-                    <button onClick={handleGen} disabled={reqMiss.length>0}
-                      style={{padding:"7px 18px",borderRadius:6,border:"none",background:reqMiss.length>0?N.hov:CL.green,color:reqMiss.length>0?N.tm:"#fff",cursor:reqMiss.length>0?"default":"pointer",fontSize:13,fontWeight:500}}>
-                      🚀 Generate V{currentVer+1}</button>
-                  </div>
+                :<div style={{width:90}}/>
               }
             </div>
           </div>
@@ -767,35 +1091,160 @@ export default function Cerebro(){
                   <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
                   <p style={{fontSize:14,color:N.ts,margin:0,maxWidth:360,textAlign:"center"}}>{genProg}</p>
                 </div>
-              :!docs
-                ?<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center"}}><p style={{color:N.ts,fontSize:14}}>Generate from Intake first.</p></div>
-                :<>
+              :<>
                   {genErr&&<div style={{margin:"12px 24px 0",padding:"10px 14px",background:"rgba(235,87,87,0.06)",border:`1px solid rgba(235,87,87,0.2)`,borderRadius:6,color:CL.red,fontSize:13}}>{genErr}</div>}
-                  <div style={{display:"flex",gap:1,padding:"8px 20px",borderBottom:`1px solid ${N.bd}`,overflowX:"auto",flexShrink:0}}>
-                    {DT.filter(d=>d.key!=="changeBrief"||changeBrief).map(d=>(
-                      <button key={d.key} onClick={()=>setActiveDoc(d.key)}
-                        style={{padding:"5px 12px",borderRadius:5,border:"none",fontSize:13,fontWeight:activeDoc===d.key?600:400,whiteSpace:"nowrap",background:activeDoc===d.key?N.act:"transparent",color:activeDoc===d.key?N.tx:d.key==="changeBrief"?CL.amber:N.ts,cursor:"pointer"}}
-                        onMouseEnter={e=>{if(activeDoc!==d.key)e.currentTarget.style.background=N.hov;}} onMouseLeave={e=>{if(activeDoc!==d.key)e.currentTarget.style.background="transparent";}}>
-                        {d.label}
-                      </button>
-                    ))}
-                  </div>
-                  <div style={{flex:1,overflowY:"auto",padding:"24px 28px 48px"}}>
-                    <div style={{maxWidth:760,margin:"0 auto"}}>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
-                        <div>
-                          <h3 style={{fontSize:20,fontWeight:700,color:N.tx,margin:"0 0 3px"}}>{DT.find(d=>d.key===activeDoc)?.label}</h3>
-                          <span style={{fontSize:12,color:N.ts,fontFamily:"monospace"}}>{DT.find(d=>d.key===activeDoc)?.file}</span>
-                        </div>
-                        <button onClick={()=>cp(docs[activeDoc]||changeBrief||"",activeDoc)}
-                          style={{padding:"6px 14px",borderRadius:6,border:`1px solid ${N.bd}`,background:copied[activeDoc]?"rgba(68,131,97,0.08)":N.bg,color:copied[activeDoc]?CL.green:N.ts,cursor:"pointer",fontSize:13,flexShrink:0}}>
-                          {copied[activeDoc]?"Copied ✓":"📋 Copy"}</button>
-                      </div>
-                      <div style={{background:N.sbg,border:`1px solid ${N.bd}`,borderRadius:8,padding:"20px 24px"}}>
-                        {renderMd(activeDoc==="changeBrief"?changeBrief:docs[activeDoc])}
-                      </div>
+                  {/* Tab bar — always shown */}
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 20px",borderBottom:`1px solid ${N.bd}`,flexShrink:0,flexWrap:"wrap",gap:4}}>
+                    <div style={{display:"flex",gap:1,overflowX:"auto"}}>
+                      {DT.filter(d=>d.key!=="changeBrief"||changeBrief).map(d=>(
+                        <button key={d.key} onClick={()=>{setActiveDoc(d.key);setShowPaste(p=>({...p,[d.key]:false}));}}
+                          style={{padding:"5px 12px",borderRadius:5,border:"none",fontSize:13,fontWeight:activeDoc===d.key?600:400,whiteSpace:"nowrap",background:activeDoc===d.key?N.act:"transparent",color:activeDoc===d.key?N.tx:d.key==="changeBrief"?CL.amber:N.ts,cursor:"pointer"}}
+                          onMouseEnter={e=>{if(activeDoc!==d.key)e.currentTarget.style.background=N.hov;}} onMouseLeave={e=>{if(activeDoc!==d.key)e.currentTarget.style.background="transparent";}}>
+                          {d.label}
+                        </button>
+                      ))}
                     </div>
+                    {docs&&<div style={{display:"flex",gap:6,flexShrink:0}}>
+                      <button onClick={downloadAllMd} disabled={zipLoading.md} style={{padding:"5px 12px",borderRadius:5,border:`1px solid rgba(34,197,94,0.27)`,background:"rgba(34,197,94,0.07)",color:"#4ade80",cursor:"pointer",fontSize:12,fontWeight:600,whiteSpace:"nowrap",opacity:zipLoading.md?0.6:1}}>
+                        {zipLoading.md?"⏳":"⬇"} .md zip
+                      </button>
+                      <button onClick={downloadAllDocx} disabled={zipLoading.docx||Object.keys(docxFiles).length===0} title={Object.keys(docxFiles).length===0?"No Word documents uploaded yet":undefined} style={{padding:"5px 12px",borderRadius:5,border:"1px solid rgba(59,130,246,0.27)",background:"rgba(59,130,246,0.07)",color:Object.keys(docxFiles).length===0?"#64748b":"#93c5fd",cursor:Object.keys(docxFiles).length===0?"default":"pointer",fontSize:12,fontWeight:600,whiteSpace:"nowrap",opacity:zipLoading.docx?0.6:1}}>
+                        {zipLoading.docx?"⏳":"⬇"} .docx zip
+                      </button>
+                    </div>}
                   </div>
+
+                  {/* Doc content area */}
+                  {(()=>{
+                    const dtEntry=DT.find(d=>d.key===activeDoc);
+                    const hasContent=activeDoc==="changeBrief"?!!changeBrief:!!(docs&&docs[activeDoc]);
+                    const isUploadable=dtEntry?.uploadable===true;
+                    const docContent=activeDoc==="changeBrief"?changeBrief:(docs?.[activeDoc]||"");
+                    const source=docSources[activeDoc];
+                    const uploadedDocxFiles=docxFiles[activeDoc]||[];
+                    const uploadedMdFiles=mdUploads[activeDoc]||[];
+                    const hasUploads=uploadedMdFiles.length>0||uploadedDocxFiles.length>0;
+                    const mdInputId=`md-upload-${activeDoc}`;
+                    const docxInputId=`docx-upload-${activeDoc}`;
+
+                    // Shared upload buttons rendered at bottom of every uploadable slot
+                    const uploadButtons=isUploadable&&(
+                      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:16}}>
+                        <label htmlFor={mdInputId} style={{padding:"6px 14px",borderRadius:6,border:`1px solid ${N.bd}`,background:N.bg,color:N.ts,cursor:"pointer",fontSize:13}}>
+                          📎 Upload .md
+                          <input id={mdInputId} type="file" accept={dtEntry?.accepts?.md} style={{display:"none"}} onChange={e=>{const f=e.target.files?.[0];if(f)handleMdUpload(activeDoc,f);e.target.value="";}}/>
+                        </label>
+                        <label htmlFor={docxInputId} style={{padding:"6px 14px",borderRadius:6,border:"1px solid rgba(59,130,246,0.27)",background:"rgba(59,130,246,0.07)",color:"#93c5fd",cursor:"pointer",fontSize:13}}>
+                          📎 Upload .docx
+                          <input id={docxInputId} type="file" accept={dtEntry?.accepts?.docx} style={{display:"none"}} onChange={e=>{const f=e.target.files?.[0];if(f)handleDocxUpload(activeDoc,f);e.target.value="";}}/>
+                        </label>
+                        <button onClick={()=>setShowPaste(p=>({...p,[activeDoc]:!p[activeDoc]}))} style={{padding:"6px 14px",borderRadius:6,border:`1px solid ${N.bd}`,background:showPaste[activeDoc]?N.act:N.bg,color:N.ts,cursor:"pointer",fontSize:13}}>
+                          ✏️ Paste
+                        </button>
+                      </div>
+                    );
+
+                    // Shared uploaded files list
+                    const uploadedFilesList=(hasUploads&&isUploadable)&&(
+                      <div style={{marginTop:20,borderTop:`1px solid ${N.bd}`,paddingTop:16}}>
+                        <p style={{margin:"0 0 10px",fontSize:12,fontWeight:600,color:N.ts,textTransform:"uppercase",letterSpacing:0.5}}>Uploaded Files</p>
+                        {uploadedMdFiles.length>0&&(
+                          <div style={{marginBottom:12}}>
+                            <p style={{margin:"0 0 6px",fontSize:12,color:N.ts}}>📄 .md files</p>
+                            {uploadedMdFiles.map((f,i)=>(
+                              <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 8px",borderRadius:6,background:N.sbg,marginBottom:4,flexWrap:"wrap"}}>
+                                <span style={{fontSize:12,color:N.tx,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>📎 {f.name}</span>
+                                <span style={{fontSize:11,color:N.ts,whiteSpace:"nowrap"}}>{new Date(f.uploadedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</span>
+                                <button onClick={()=>{updateActiveProject({docs:{...(docs||{}),[activeDoc]:f.content},docSources:{...docSources,[activeDoc]:"uploaded"}});}} style={{background:"none",border:"none",color:CL.blue,cursor:"pointer",fontSize:12,padding:"0 4px",fontWeight:500}}>👁 View</button>
+                                <button onClick={()=>downloadUploadedMd(f)} style={{background:"none",border:"none",color:N.ts,cursor:"pointer",fontSize:12,padding:"0 4px"}}>⬇</button>
+                                <button onClick={()=>deleteMdUpload(activeDoc,i)} style={{background:"none",border:"none",color:CL.red,cursor:"pointer",fontSize:12,padding:"0 4px"}}>🗑</button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {uploadedDocxFiles.length>0&&(
+                          <div>
+                            <p style={{margin:"0 0 6px",fontSize:12,color:N.ts}}>📄 .docx files</p>
+                            {uploadedDocxFiles.map((f,i)=>(
+                              <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 8px",borderRadius:6,background:N.sbg,marginBottom:4,flexWrap:"wrap"}}>
+                                <span style={{fontSize:12,color:N.tx,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>📎 {f.name}</span>
+                                <span style={{fontSize:11,color:N.ts,whiteSpace:"nowrap"}}>{new Date(f.uploadedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</span>
+                                <button onClick={()=>downloadUploadedDocx(activeDoc,i)} style={{background:"none",border:"none",color:N.ts,cursor:"pointer",fontSize:12,padding:"0 4px"}}>⬇</button>
+                                <button onClick={()=>deleteDocxUpload(activeDoc,i)} style={{background:"none",border:"none",color:CL.red,cursor:"pointer",fontSize:12,padding:"0 4px"}}>🗑</button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+
+                    // Shared paste panel
+                    const pastePanel=isUploadable&&showPaste[activeDoc]&&(
+                      <div style={{marginTop:12}}>
+                        <textarea value={pasteContent[activeDoc]||""} onChange={e=>setPasteContent(p=>({...p,[activeDoc]:e.target.value}))}
+                          placeholder="Paste markdown content here…"
+                          style={{width:"100%",minHeight:140,padding:"10px 12px",borderRadius:6,border:`1px solid ${N.bd}`,background:"#1e2a3a",color:"#e2e8f0",fontSize:13,fontFamily:"monospace",resize:"vertical",boxSizing:"border-box",outline:"none"}}/>
+                        <button onClick={()=>handlePaste(activeDoc,pasteContent[activeDoc]||"")} disabled={!(pasteContent[activeDoc]||"").trim()}
+                          style={{marginTop:6,padding:"6px 16px",borderRadius:6,border:"none",background:CL.green,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:500,opacity:(pasteContent[activeDoc]||"").trim()?1:0.4}}>
+                          💾 Save</button>
+                      </div>
+                    );
+
+                    if(hasContent){
+                      return(
+                        <div style={{flex:1,overflowY:"auto",padding:"24px 28px 48px"}}>
+                          <div style={{maxWidth:760,margin:"0 auto"}}>
+                            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12,flexWrap:"wrap",gap:8}}>
+                              <div>
+                                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                                  <h3 style={{fontSize:20,fontWeight:700,color:N.tx,margin:0}}>{dtEntry?.label}</h3>
+                                  {source==="uploaded"&&<span style={{padding:"2px 8px",borderRadius:10,background:`${CL.blue}15`,color:CL.blue,fontSize:11,fontWeight:600}}>📤 Uploaded</span>}
+                                  {source==="pasted"&&<span style={{padding:"2px 8px",borderRadius:10,background:`${CL.amber}15`,color:CL.amber,fontSize:11,fontWeight:600}}>📝 Pasted</span>}
+                                </div>
+                                <span style={{fontSize:12,color:N.ts,fontFamily:"monospace"}}>{dtEntry?.file}</span>
+                              </div>
+                              <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0,flexWrap:"wrap"}}>
+                                <button onClick={()=>cp(docContent,activeDoc)} style={{padding:"6px 14px",borderRadius:6,border:`1px solid ${N.bd}`,background:copied[activeDoc]?"rgba(68,131,97,0.08)":N.bg,color:copied[activeDoc]?CL.green:N.ts,cursor:"pointer",fontSize:13}}>{copied[activeDoc]?"Copied ✓":"📋 Copy"}</button>
+                                <button onClick={()=>downloadMd(activeDoc)} style={{padding:"6px 14px",borderRadius:6,border:`1px solid ${N.bd}`,background:N.bg,color:"#60a5fa",cursor:"pointer",fontSize:13}}>⬇ .md</button>
+                                <button onClick={()=>downloadDocx(activeDoc)} style={{padding:"6px 14px",borderRadius:6,border:"1px solid rgba(59,130,246,0.27)",background:"rgba(59,130,246,0.07)",color:"#93c5fd",cursor:"pointer",fontSize:13,fontWeight:600}}>⬇ .docx</button>
+                              </div>
+                            </div>
+                            <div style={{background:N.sbg,border:`1px solid ${N.bd}`,borderRadius:8,padding:"20px 24px"}}>
+                              {renderMd(docContent)}
+                            </div>
+                            {uploadedFilesList}
+                            {uploadButtons}
+                            {pastePanel}
+                          </div>
+                        </div>
+                      );
+                    } else if(isUploadable){
+                      return(
+                        <div style={{flex:1,overflowY:"auto",padding:"24px 28px 48px"}}>
+                          <div style={{maxWidth:760,margin:"0 auto"}}>
+                            <div style={{marginBottom:20}}>
+                              <h3 style={{fontSize:20,fontWeight:700,color:N.tx,margin:"0 0 3px"}}>{dtEntry?.label}</h3>
+                              <span style={{fontSize:12,color:N.ts,fontFamily:"monospace"}}>{dtEntry?.file}</span>
+                            </div>
+                            <div style={{border:`1px solid ${N.bd}`,borderRadius:10,padding:"28px",background:N.sbg}}>
+                              <div style={{fontSize:28,marginBottom:10,textAlign:"center"}}>📄</div>
+                              <p style={{fontSize:15,fontWeight:600,color:N.tx,margin:"0 0 6px",textAlign:"center"}}>No document yet</p>
+                              <p style={{fontSize:13,color:N.ts,margin:"0 0 20px",lineHeight:1.6,textAlign:"center"}}>Generate using <strong>🚀 Generate</strong>, or upload a document you created via copy-paste.</p>
+                              {uploadButtons}
+                              {pastePanel}
+                            </div>
+                            {uploadedFilesList}
+                          </div>
+                        </div>
+                      );
+                    } else {
+                      return(
+                        <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                          <p style={{color:N.ts,fontSize:14}}>Generate from Intake first.</p>
+                        </div>
+                      );
+                    }
+                  })()}
                 </>
             }
           </div>
@@ -940,7 +1389,24 @@ export default function Cerebro(){
           <div style={{flex:1,overflowY:"auto",padding:"40px 56px 60px"}}>
             <div style={{maxWidth:700,margin:"0 auto"}}>
               <h2 style={{fontSize:26,fontWeight:700,color:N.tx,margin:"0 0 8px",letterSpacing:-0.3}}>Usage Guide</h2>
-              <p style={{fontSize:14,color:N.ts,margin:"0 0 28px"}}>Claude subscription plans and token-saving tips.</p>
+              <p style={{fontSize:14,color:N.ts,margin:"0 0 20px"}}>Claude subscription plans and token-saving tips.</p>
+              <div style={{border:`1px solid ${N.bd}`,borderRadius:8,padding:"18px 20px",marginBottom:20,background:N.sbg}}>
+                <h3 style={{fontSize:15,fontWeight:600,color:N.tx,margin:"0 0 12px"}}>📦 What CEREBRO Generates</h3>
+                <p style={{margin:"0 0 8px",fontSize:13,color:N.ts,lineHeight:1.6}}>Claude generates <strong style={{color:N.tx}}>10 files</strong> — 5 Markdown files for Claude Code and 5 Word documents for stakeholder sharing.</p>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+                  <div style={{background:N.bg,borderRadius:6,padding:"10px 14px",border:`1px solid ${N.bd}`}}>
+                    <div style={{fontSize:11,fontWeight:600,color:CL.blue,marginBottom:4}}>Markdown Files (.md)</div>
+                    <div style={{fontSize:12,color:N.ts,lineHeight:1.6}}>prd.md · app-flow.md · design.md · backend-spec.md · security-checklist.md</div>
+                    <div style={{fontSize:11,color:N.ts,marginTop:4}}>Drop these in your project folder for Claude Code.</div>
+                  </div>
+                  <div style={{background:N.bg,borderRadius:6,padding:"10px 14px",border:`1px solid ${N.bd}`}}>
+                    <div style={{fontSize:11,fontWeight:600,color:CL.purple,marginBottom:4}}>Word Documents (.docx)</div>
+                    <div style={{fontSize:12,color:N.ts,lineHeight:1.6}}>prd.docx · app-flow.docx · design.docx · backend-spec.docx · security-checklist.docx</div>
+                    <div style={{fontSize:11,color:N.ts,marginTop:4}}>Share with your team, investors, or stakeholders.</div>
+                  </div>
+                </div>
+                <p style={{margin:0,fontSize:12,color:N.ts,lineHeight:1.6}}>💡 If you used the copy-paste method, upload your generated documents back into CEREBRO using the upload buttons on the <strong style={{color:N.tx}}>Docs tab</strong>.</p>
+              </div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:20}}>
                 {[{p:"Pro",pr:"$20/mo",c:CL.blue},{p:"Max 5x",pr:"$100/mo",c:CL.purple},{p:"Max 20x",pr:"$200/mo",c:CL.amber}].map(x=>(
                   <div key={x.p} style={{border:`1px solid ${N.bd}`,borderRadius:8,padding:"16px 18px"}}>
