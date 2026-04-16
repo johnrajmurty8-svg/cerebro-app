@@ -1,14 +1,10 @@
 'use client'
 
-type WorkflowStatus = Record<number, string>;
-type ProjectVersion = { ver: number; date: string; ans: Record<string, string>; mode: string | null; changeBrief?: string; };
 type QuestionDef = { id: string; label: string; type: string; placeholder: string; guidance: string; required?: boolean; };
 type SectionDef = { id: string; title: string; icon: string; description: string; questions: QuestionDef[]; };
-type DiffChange = { id: string; label: string; section: string; oldVal?: string; newVal?: string; };
-type DiffResult = { added: DiffChange[]; modified: DiffChange[]; removed: DiffChange[]; unchanged: number; };
 type DocxFileEntry = { name: string; data: string; uploadedAt: string };
 type MdUploadEntry = { name: string; content: string; uploadedAt: string };
-type Project = { id: string; name: string; status: string; mode: string | null; created: string; lastEdited: string; currentAnswers: Record<string, string>; versions: ProjectVersion[]; docs: Record<string, string> | null; changeBrief: string; workflowStatus: WorkflowStatus; docxFiles?: Record<string, DocxFileEntry[]>; docSources?: Record<string, "api" | "uploaded" | "pasted">; mdUploads?: Record<string, MdUploadEntry[]>; };
+type Project = { id: string; name: string; status: string; mode: string | null; created: string; lastEdited: string; currentAnswers: Record<string, string>; docs: Record<string, string> | null; workflowStatus: Record<string, boolean>; docxFiles?: Record<string, DocxFileEntry[]>; docSources?: Record<string, "api" | "uploaded" | "pasted">; mdUploads?: Record<string, MdUploadEntry[]>; };
 // NOTE: Anthropic API calls from localhost will fail with CORS.
 // PRIMARY FLOW: Use the 📋 Copy button on the last intake section,
 // then paste into Claude.ai to generate your documents.
@@ -187,18 +183,12 @@ Below is the complete project intake form. Generate all 10 files from this infor
 
 function genClaudeMd(a: Record<string,string>){return `# ${a.product_name||"Product"} — Claude Code Instructions\n\n## Overview\n${a.one_liner||"See project-brief.md"}\n\n## Stack\n${a.tech_stack||"Best modern stack"}\n\n## Rules\n- Read project-brief.md FIRST\n- plan.md before coding — wait for approval\n- Follow design.md, backend-spec.md, security-checklist.md, app-flow.md\n- TypeScript, tests, small components, env vars\n\n## Workflow\n1. Read doc → 2. Plan → 3. Approve → 4. Build → 5. Test → 6. Report\n\n## Principles\nSimplicity. No shortcuts. Minimal impact. Ask when unsure.`;}
 function genBrief(a: Record<string,string>){return `# ${a.product_name||"Product"} — Brief\n\n> ${a.one_liner||""}\n\nOwner: ${a.author||"TBD"} | Launch: ${a.target_date||"TBD"} | Team: ${a.team_size||"Solo+AI"}\n\n## Build Order\n1. Setup 2. DB+Auth 3. API 4. UI Shell 5. Features 6. Polish 7. Deploy\n\n## Docs\nprd.md, app-flow.md, design.md, backend-spec.md, security-checklist.md, CLAUDE.md`;}
-function genPrompts(a: Record<string,string>){return `# Prompts for ${a.product_name||"Product"}\n\n═══ SESSION 1: SETUP (~20min) ═══\nRead CLAUDE.md + all docs. Create plan.md with phases. No code yet.\n\n═══ SESSION 2: BACKEND (~1-2hr) ═══\nExecute Phase 1-3. Follow backend-spec.md + security-checklist.md.\n\n═══ SESSION 3: FRONTEND (~1-2hr) ═══\nExecute Phase 4-5. Follow design.md + app-flow.md.\n\n═══ SESSION 4: POLISH (~1hr) ═══\nPhase 6-7. Errors, loading, responsive, tests, deploy.\n\n═══ OPTIONAL: STITCH ═══\nRedesign in Stitch → export → "Update [component] to match. Keep functionality."`;}
-
-/* ═══ DIFF ENGINE ═══ */
-function computeDiff(oldAns: Record<string,string>,newAns: Record<string,string>,sections: SectionDef[]){const changes: DiffResult={added:[],modified:[],removed:[],unchanged:0};const allQs=sections.flatMap(s=>s.questions.map(q=>({...q,section:s.title})));allQs.forEach(q=>{const o=(oldAns[q.id]||"").trim();const n=(newAns[q.id]||"").trim();if(!o&&n)changes.added.push({id:q.id,label:q.label,section:q.section,newVal:n});else if(o&&!n)changes.removed.push({id:q.id,label:q.label,section:q.section,oldVal:o});else if(o&&n&&o!==n)changes.modified.push({id:q.id,label:q.label,section:q.section,oldVal:o,newVal:n});else if(o&&n&&o===n)changes.unchanged++;});return changes;}
-
-function generateChangeBrief(diff: DiffResult,oldVer: number,newVer: number,productName: string){let b=`# Change Brief: V${oldVer} → V${newVer}\n`;b+=`Product: ${productName}\nGenerated: ${new Date().toLocaleDateString()}\n\n`;b+=`## Summary\n`;b+=`- ${diff.added.length} fields added\n- ${diff.modified.length} fields modified\n- ${diff.removed.length} fields removed\n- ${diff.unchanged} fields unchanged\n\n`;if(diff.modified.length){b+=`## Modified\n`;diff.modified.forEach((c: DiffChange)=>{b+=`### ${c.section} → ${c.label}\n`;b+=`**Was:** ${(c.oldVal||"").substring(0,200)}${(c.oldVal||"").length>200?"...":""}\n`;b+=`**Now:** ${(c.newVal||"").substring(0,200)}${(c.newVal||"").length>200?"...":""}\n\n`;});}if(diff.added.length){b+=`## Added\n`;diff.added.forEach((c: DiffChange)=>{b+=`### ${c.section} → ${c.label}\n${(c.newVal||"").substring(0,200)}${(c.newVal||"").length>200?"...":""}\n\n`;});}if(diff.removed.length){b+=`## Removed\n`;diff.removed.forEach((c: DiffChange)=>{b+=`### ${c.section} → ${c.label}\n~~${(c.oldVal||"").substring(0,200)}~~\n\n`;});}b+=`\n---\n\n## Claude Code Update Prompt\n\nPaste this into Claude Code:\n\n`;b+=`Read change-brief.md. This describes changes from V${oldVer} to V${newVer}.\nMake ONLY the listed changes. Do not rebuild unchanged features.\nCreate an update plan first — do not code until I approve.\nFor each change, update the minimum files needed.\n`;return b;}
 
 /* ═══ Helpers ═══ */
 function FileChip({file,onRemove}: {file: File, onRemove: ()=>void}){return <span style={{display:"inline-flex",alignItems:"center",gap:4,background:"#f7f6f3",border:"1px solid #e3e2e0",borderRadius:6,padding:"3px 8px",fontSize:11,maxWidth:160}}><span style={{fontSize:12}}>📁</span><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,color:"#787774"}}>{file.name}</span><button onClick={onRemove} style={{background:"none",border:"none",color:"#9b9b9b",cursor:"pointer",fontSize:13,padding:0}}>×</button></span>;}
 
-const TABS=["intake","results","versions","workflow","usage"];
-const TL={intake:"Intake",results:"Docs",versions:"Versions",workflow:"Workflow",usage:"Usage"};
+const TABS=["intake","results","workflow"];
+const TL: Record<string,string>={intake:"Intake",results:"Docs",workflow:"Workflow"};
 const DT=[
   {key:"prd",label:"📋 PRD",file:"prd.md + prd.docx",uploadable:true,accepts:{md:".md,.txt,.markdown",docx:".docx"}},
   {key:"appFlow",label:"🗺️ Flow",file:"app-flow.md + app-flow.docx",uploadable:true,accepts:{md:".md,.txt,.markdown",docx:".docx"}},
@@ -208,17 +198,14 @@ const DT=[
   {key:"claudeMd",label:"🤖 CLAUDE",file:"CLAUDE.md",uploadable:false},
   {key:"projectBrief",label:"📦 Brief",file:"project-brief.md",uploadable:false},
   {key:"prompts",label:"💬 Prompts",file:"prompts.md",uploadable:false},
-  {key:"changeBrief",label:"🔄 Changes",file:"change-brief.md",uploadable:false},
 ];
 
 /* ═══ STORAGE HELPERS ═══ */
 const genId=()=>`proj_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
-const DEFAULT_WF_STATUS: WorkflowStatus={1:"notStarted",2:"notStarted",3:"notStarted",4:"notStarted",5:"notStarted"};
-const blankProject=(mode: string|null, id?: string)=>({id:id||genId(),name:"Untitled Project",status:"draft",mode,created:new Date().toISOString(),lastEdited:new Date().toISOString(),currentAnswers:{},versions:[],docs:null,changeBrief:"",workflowStatus:{...DEFAULT_WF_STATUS}});
+const blankProject=(mode: string|null, id?: string)=>({id:id||genId(),name:"Untitled Project",status:"draft",mode,created:new Date().toISOString(),lastEdited:new Date().toISOString(),currentAnswers:{},docs:null,workflowStatus:{}});
 
 function saveStorage(data: {projects: Project[], activeProjectId: string|null}){try{localStorage.setItem("cerebro-projects",JSON.stringify(data));}catch{}}
-function migrateIfNeeded(){try{const r=localStorage.getItem("cerebro-projects");if(r){const d=JSON.parse(r);if(d?.projects){// Patch existing projects missing workflowStatus
-const patched={...d,projects:d.projects.map((p: Project)=>({...p,workflowStatus:p.workflowStatus||{...DEFAULT_WF_STATUS}}))};return patched;}}}catch{}try{const old=localStorage.getItem("cerebro-v1");if(old){const d=JSON.parse(old);const id=genId();const project={id,name:d.ans?.product_name||"Migrated Project",status:"draft",mode:d.mode||"avatar",created:new Date().toISOString(),lastEdited:new Date().toISOString(),currentAnswers:d.ans||{},versions:(d.versions||[]),docs:null,changeBrief:"",workflowStatus:{...DEFAULT_WF_STATUS}};const data={projects:[project],activeProjectId:null};saveStorage(data);localStorage.removeItem("cerebro-v1");return data;}}catch{}return{projects:[],activeProjectId:null};}
+function migrateIfNeeded(){try{const r=localStorage.getItem("cerebro-projects");if(r){const d=JSON.parse(r);if(d?.projects){const patched={...d,projects:d.projects.map((p: Project)=>({...p,workflowStatus:p.workflowStatus||{}}))};return patched;}}}catch{}try{const old=localStorage.getItem("cerebro-v1");if(old){const d=JSON.parse(old);const id=genId();const project={id,name:d.ans?.product_name||"Migrated Project",status:"draft",mode:d.mode||"avatar",created:new Date().toISOString(),lastEdited:new Date().toISOString(),currentAnswers:d.ans||{},docs:null,workflowStatus:{}};const data={projects:[project],activeProjectId:null};saveStorage(data);localStorage.removeItem("cerebro-v1");return data;}}catch{}return{projects:[],activeProjectId:null};}
 
 /* ═══ STATUS CONFIG ═══ */
 const SC={
@@ -231,68 +218,8 @@ const SC={
 };
 
 /* ═══ TEST DATA ═══ */
-const TEST_DATA={product_name:"FlowBoard",one_liner:"A visual project management app for remote teams that turns conversations into task boards using AI",author:"Alex Rivera, Product Manager",stakeholders:"• Maya Chen — Engineering Lead (Approver)\n• Jordan Park — Design Lead (Contributor)\n• Sam Torres — CEO (Informed)\n• Priya Mehta — QA Lead (Consulted)",target_date:"Q3 2026 — August 15 target",team_size:"1 PM (me), 1 designer, 2 engineers + Claude Code for acceleration.",problem_statement:"Remote teams waste 6+ hours per week manually converting Slack/Teams conversations into actionable tasks. 73% of action items discussed in meetings are never tracked, leading to missed deadlines and duplicated work.",who_affected:"Primary: Project managers and team leads at remote-first companies (10-50 employees).",current_solutions:"• Jira (45%) — powerful but over-complex, 30min+ daily maintenance\n• Trello (25%) — too simple for real projects, no AI\n• Asana (15%) — good but expensive\n• Spreadsheets + Slack (15%) — chaos",business_case:"Project management software market: $7.1B in 2026, growing 13% YoY. No major player converts conversations to tasks automatically.",cost_of_inaction:"Competitors like Linear are adding AI features in Q4 2026. The window is 6-12 months before incumbents catch up.",primary_persona:"Name: Sarah the Team Lead\nRole: Engineering manager at a 30-person SaaS startup\nAge: 34\nGoals: Keep her team aligned without micromanaging.\nFrustrations: Spends 45 min/day updating Jira.",secondary_personas:"Dev Dan — Senior developer who hates updating task statuses.\nCEO Claire — Needs a 30-second weekly view of all projects.",user_journey:"1. Team finishes a Slack discussion\n2. FlowBoard AI detects action items\n3. Suggests task cards with assignees\n4. Sarah approves with one click\n5. Tasks appear on the team's board",jobs_to_be_done:"• When my team discusses tasks in Slack, I want them auto-captured so nothing falls through\n• When I start my day, I want a clear view of what's blocked",product_goals:"1. Reduce daily PM admin time from 45 min to under 10 min\n2. Capture 90%+ of discussed action items\n3. Achieve 70% weekly active usage within 2 months\n4. Reach 500 paying teams within 6 months\n5. NPS > 50 by month 3",kpis:"• PM admin time: 45 min/day → <10 min/day\n• Task capture rate: ~27% → 90%+\n• Weekly active teams: 70% of signed-up teams",leading_indicators:"Sign-up to first board creation rate, Slack integration completion rate, AI suggestion acceptance rate",in_scope:"• AI conversation-to-task extraction (Slack integration)\n• Visual Kanban board with drag-and-drop\n• Auto-status updates from GitHub\n• Team dashboard with project health metrics\n• Daily digest emails\n• Slack bot for quick task creation",out_of_scope:"• Native mobile apps — Phase 2\n• Microsoft Teams integration — Phase 2\n• Time tracking — Phase 2\n• Gantt charts — Phase 3",future_phases:"Phase 2 (Q4 2026): Native iOS/Android, Teams integration\nPhase 3 (Q1 2027): Gantt charts, custom automations",core_features:"Epic 1: Conversation Intelligence\n- Connect Slack workspace\n- AI scans channels for action items\n- Suggests task cards\n- One-click approve/edit/dismiss\n\nEpic 2: Visual Board\n- Kanban columns (To Do, In Progress, Review, Done)\n- Drag-and-drop cards\n- Card detail view\n\nEpic 3: Auto-Status\n- GitHub integration\n- Auto-move cards based on PR/commit activity",user_stories:"• As a team lead, I want AI to extract tasks from Slack so I don't manually create tickets\n• As a developer, I want my task status to update when I push code",priority_notes:"Conversation Intelligence + Visual Board = MUST HAVE\nAuto-Status from GitHub = SHOULD HAVE\nDashboard + Digest = SHOULD HAVE",performance:"Page load <2s, AI task extraction <5s per conversation, board renders <1s with 500+ cards",security:"OAuth 2.0 (Google + Slack SSO). AES-256 at rest, TLS 1.3 in transit. SOC 2 Type I by month 6. GDPR-compliant.",accessibility:"WCAG 2.1 AA compliance. Full keyboard navigation. Screen reader support.",platforms:"Web: Chrome, Firefox, Safari, Edge (latest 2 versions). Responsive. Min screen: 375px.",tech_stack:"Frontend: Next.js 14 + Tailwind CSS\nBackend: Node.js + tRPC\nDatabase: Supabase (PostgreSQL + Realtime)\nAuth: Clerk\nAI: Claude API\nEmail: Resend",integrations:"• Slack — OAuth app, event subscriptions, bot\n• GitHub — webhooks\n• Google OAuth — social login\n• Resend — transactional emails\n• Stripe — billing",data_model:"Users, Teams, Projects, Boards, Columns, Tasks, TaskComments, SlackConnections, GitHubConnections, AIExtractions",ai_instructions:"Use Claude Code for all backend logic and AI integration. All components must be atomic and typed. Write E2E tests for critical flows.",design_direction:"Modern, clean SaaS inspired by Linear (speed + density) and Notion (flexibility). Dark mode primary. Brand colors: Electric indigo (#6366F1) + Slate (#0F172A).",key_screens:"1. Board View — Kanban columns\n2. Inbox — AI-suggested tasks\n3. Task Detail — Full card\n4. Dashboard — Project health\n5. Settings — Team management\n6. Onboarding — Connect Slack + GitHub",navigation:"Left sidebar: Projects list + Board/Inbox/Dashboard toggle. Top bar: search, filters. Command palette (Cmd+K).",interactions:"Drag-and-drop task cards. Inline editing. Command palette (Cmd+K). Keyboard shortcuts. 60fps drag animations.",phases:"Phase 0 — Discovery & Design (2 weeks)\nPhase 1 — MVP Build (6 weeks)\nPhase 2 — Beta (2 weeks)\nPhase 3 — Public Launch (1 week)",milestones:"• Design complete: May 1\n• Slack integration working: May 15\n• AI extraction pipeline: May 30\n• Board UI complete: June 15\n• Beta launch: July 1\n• Public launch: August 15",launch_criteria:"GO: All P0 bugs resolved, Slack integration verified, AI extraction accuracy >85%, load test passed.\nNO-GO: Any P0 open, Slack API approval pending.",known_risks:"1. Slack API rate limits\n2. AI extraction accuracy variability\n3. GitHub webhook reliability\n4. Small team — key person dependency\n5. Slack app approval process 2-4 weeks",mitigations:"1. Queue-based processing with backoff\n2. Human-in-the-loop: always show suggestions, never auto-create\n3. Retry logic + manual sync fallback\n4. Document everything, use Claude Code\n5. Submit Slack app early in Phase 0",dependencies:"Slack app directory approval (2-4 weeks), GitHub OAuth app registration, Clerk account setup, Supabase project provisioning",existing_research:"15 user interviews with PMs (March 2026). 93% say task capture is their #1 pain. 87% would pay $8-15/user/month.",competitors:"• Linear: Best UX but no conversation integration. $8/user/mo.\n• Jira: Market leader but over-complex. $7.75/user/mo.\n• Asana: Good for non-technical teams. $10.99/user/mo.",budget:"Infrastructure: $0-100/month (Supabase free tier, Vercel free tier). Must launch before September for YC W27.",anything_else:"Applying to YC Winter 2027 batch. MVP needs to be live with real users and revenue traction by October 2026."};
+const TEST_DATA={product_name:"FamilyTable",one_liner:"A family recipe book app where you upload photos, handwritten notes, and ingredient lists — and AI generates a beautiful, searchable full recipe to preserve for generations",author:"Jamie Okafor, Product Designer & Home Cook",stakeholders:"• Nadia Okafor — Engineering Lead (Approver)\n• Marcus Teo — Mobile Developer (Contributor)\n• Priya Okafor — Grandmother / Primary User (Informed)\n• Sam Chen — QA Lead (Consulted)",target_date:"Q4 2026 — October 31 target",team_size:"1 designer/PM (me), 1 mobile developer + Claude Code for acceleration. Using Figma for design, VS Code + Claude Code for dev.",problem_statement:"Family recipes are stored on scraps of paper, in notebooks, and in people's heads. When grandparents pass away, these recipes are often lost forever. Digitising them is painful — scanning, transcribing, guessing at missing measurements, and reformatting all takes hours. There's no easy way to capture the real story behind a recipe along with the instructions.",who_affected:"Primary: Home cooks (25–65) who want to preserve family food heritage. Secondary: Family members who want to browse and cook from a shared digital cookbook. Tertiary: Food bloggers and recipe creators who want a faster way to document their cooking.",current_solutions:"• Handwritten recipe cards — authentic but fragile, easily lost\n• Notes apps (Apple Notes, Google Keep) — unstructured, hard to search\n• Recipe apps (Paprika, Yummly) — designed for web imports, not handwritten originals\n• Photo albums — images saved but not searchable or cookable\n• Word docs / spreadsheets — clunky, not mobile-friendly",business_case:"The recipe app market is $300M+ and growing with AI. No current app solves the handwritten-card-to-digital-recipe pipeline with AI OCR and generation. 73M households in the US have a family recipe tradition worth preserving.",cost_of_inaction:"Every year, family members pass away and take their recipes with them. The longer we wait, the more irreplaceable recipes are lost. Competitors are beginning to add AI photo features, but none have focused on the family preservation angle — this window is 12–18 months.",primary_persona:"Name: Jamie the Keeper\nRole: Adult child / home cook trying to preserve family recipes\nAge: 38\nGoals: Digitise Grandma's 40+ handwritten recipe cards before she passes.\nFrustrations: Photos of recipe cards are unreadable on small screens. Transcribing by hand takes 20 min per recipe.",secondary_personas:"Persona 2: Priya the Grandmother — 72-year-old who cooks from memory. Doesn't type but willing to be photographed cooking and voice-record notes.\n\nPersona 3: Kai the Teen Cook — 16-year-old who wants to learn family recipes but needs clear step-by-step instructions, not handwritten shorthand.",user_journey:"1. Grandma cooks her signature chicken curry from memory\n2. Jamie photographs the dish, the handwritten recipe card, and the raw ingredients\n3. Uploads all three photos into FamilyTable\n4. Adds a few voice or text notes: \"less chilli than the card says, Grandma always adjusts\"\n5. FamilyTable AI generates a full structured recipe: title, servings, ingredients with measurements, step-by-step instructions, tips, and a story intro\n6. Jamie reviews, edits a few lines, and saves\n7. Recipe is added to the family cookbook — browsable by family member, cuisine, occasion, or ingredient\n8. Family members can comment, rate, and add their own variations",jobs_to_be_done:"• When I find a handwritten recipe card, I want to photograph it and get a clean digital version so I don't have to transcribe it manually\n• When I cook from memory, I want to record what I made quickly so I can repeat it later\n• When a family member passes, I want all their recipes safely stored and shareable so future generations can cook their dishes\n• When my kids ask how to make a dish, I want to send them a clear, tested recipe with photos so they can cook it themselves",product_goals:"1. Allow upload of photos, notes, and ingredient lists — generate a full structured recipe in under 30 seconds\n2. Store and organise all recipes in a searchable family cookbook\n3. Support multi-user family sharing — every family member can contribute and browse\n4. Achieve 80% recipe generation accuracy without manual correction\n5. Reach 10,000 active family cookbooks within 6 months of launch",kpis:"• Recipe generation time: under 30 seconds per recipe\n• Edit rate after generation: less than 20% of fields need manual correction\n• Weekly active family members per cookbook: 3+\n• Recipe retention rate: 90%+ of generated recipes saved (not discarded)\n• NPS: 60+ within 3 months",leading_indicators:"Time to first generated recipe, photo upload completion rate, family invite acceptance rate, return visits within 7 days of first recipe saved",in_scope:"• Photo upload (up to 3 images per recipe)\n• Text/voice note input\n• AI recipe generation (title, servings, ingredients, steps, tips, story intro)\n• Recipe card view\n• Family cookbook dashboard\n• Basic search by name or ingredient\n• Family invite link sharing",out_of_scope:"• Video upload — V2\n• Grocery list generation — V2\n• Meal planning — V2\n• Public recipe sharing — V2\n• Print formatting — V2\n• Nutritional analysis — not planned for MVP",future_phases:"Phase 2 (Q1 2027): Video upload, grocery list generation, meal planning calendar\nPhase 3 (Q2 2027): Print-quality recipe books, public cookbook sharing\nPhase 4 (Q3 2027): Nutritional analysis, dietary filter engine, recipe scaling AI",core_features:"Epic 1: Recipe Capture\n- Upload up to 3 photos (dish, card, ingredients)\n- Add text or voice notes\n- AI generates full structured recipe on submit\n\nEpic 2: Recipe Card\n- Title, story intro, servings, prep/cook time\n- Ingredient list with quantities and units\n- Step-by-step instructions with tips\n- Photo gallery\n\nEpic 3: Family Cookbook\n- Dashboard showing all family recipes\n- Search by name, ingredient, cuisine, occasion\n- Filter by family member contributor\n\nEpic 4: Family Sharing\n- Invite family members via shareable link\n- Role-based access: Owner, Contributor, Viewer\n- Comment and rate recipes\n- Add personal variations",user_stories:"• As a home cook, I want to photograph a handwritten recipe card and get a clean digital recipe so I don't have to type it out\n• As a family member, I want to browse all our saved recipes on my phone so I can cook them without asking anyone\n• As a cookbook owner, I want to invite my whole family so everyone can contribute and access our recipes\n• As a contributor, I want to add my own variation of a family recipe so my version is preserved alongside the original",priority_notes:"Recipe Capture + AI Generation = MUST HAVE (core value prop)\nRecipe Card View = MUST HAVE\nFamily Cookbook Dashboard + Search = MUST HAVE\nFamily Sharing (invite link) = MUST HAVE\nComments + Variations = SHOULD HAVE",performance:"Photo upload <3s on 4G, AI recipe generation <30s, cookbook loads <1s with 200+ recipes, supports 50K concurrent users at launch, 99.9% uptime",security:"Image uploads scanned for inappropriate content before storage; family invite links expire after 7 days; PII limited to name, email, and avatar; no public access to family cookbooks without invite; HTTPS enforced; API keys server-side only",accessibility:"WCAG 2.1 AA compliance. Large text mode for older users. High contrast mode. Screen reader support for recipe browsing. Voice input for notes.",platforms:"React Native — iOS and Android. Expo for local dev and builds. Min iOS: 15, Min Android: 10. Responsive design for tablet cooking mode.",tech_stack:"React Native (iOS + Android), Node.js backend, PostgreSQL, AWS S3 for image storage, Claude API for recipe generation and OCR, Expo for local dev and builds",integrations:"• Claude API — recipe generation, OCR on handwritten cards\n• AWS S3 — image storage\n• Firebase Cloud Messaging — family activity notifications\n• Apple Sign-In / Google Sign-In\n• Expo — local dev and OTA builds",data_model:"User (id, name, email, avatar, family_id, role)\nFamily (id, name, cookbook_name, invite_code, created_at)\nRecipe (id, family_id, created_by, title, description, servings, prep_time, cook_time, cuisine, occasion, story, status)\nIngredient (id, recipe_id, name, quantity, unit, notes)\nStep (id, recipe_id, order, instruction, tip)\nRecipeImage (id, recipe_id, type [dish/card/ingredients], s3_url, caption)\nComment (id, recipe_id, user_id, body, created_at)\nVariation (id, recipe_id, user_id, title, notes)",ai_instructions:"Use Claude Code for all backend logic, API routes, and Claude API integration. Claude API handles two tasks: OCR on handwritten recipe card photos, and structured recipe generation from the combined photo analysis + user notes. All generation must return structured JSON that maps directly to the Recipe, Ingredient, and Step data models. Use Expo for mobile builds.",design_direction:"Warm, tactile aesthetic — feels like a real cookbook, not a productivity app. Light mode primary. Brand colors: Warm terracotta (#C1440E) + Cream (#FDF6EC) + Deep olive (#3B4A2F). Recipe cards should feel like physical index cards. Large tap targets for older users.",key_screens:"1. Onboarding / family cookbook setup\n2. Home dashboard (recent + featured recipes)\n3. Upload screen (photo + notes input)\n4. AI generation loading screen\n5. Recipe review + edit screen\n6. Recipe card view\n7. Cookbook browser (search, filter by cuisine/occasion/family member)\n8. Family member profiles\n9. Settings",navigation:"Bottom tab bar: Home, Upload, Cookbook, Family, Profile. Upload is the primary CTA — prominent centre tab. Recipe card has full-screen immersive view. Cookbook browser has filter chips at top.",interactions:"Tap to upload photos from camera or library. Long-press recipe card to share or edit. Swipe recipe card to add to favourites. Pull to refresh cookbook. Tap ingredient to check it off while cooking.",phases:"Phase 0 — Discovery & Design (2 weeks): User interviews, Figma wireframes, Claude API OCR spike\nPhase 1 — MVP Build (8 weeks): Photo upload + AI generation + recipe card + basic cookbook\nPhase 2 — Family Features (3 weeks): Invite links, comments, variations\nPhase 3 — Beta (2 weeks): 50 families, feedback loop, accuracy tuning\nPhase 4 — Launch (1 week): App store submission, marketing, onboarding polish",milestones:"• Design complete: July 1\n• Claude API OCR + generation pipeline working: July 15\n• Recipe card view complete: August 1\n• Family sharing live: August 20\n• Beta with 50 families: September 1\n• App store submission: October 15\n• Public launch: October 31",launch_criteria:"GO: All P0 bugs resolved, AI generation accuracy >80% on test set of 50 recipe cards, photo upload working on iOS + Android, family invite flow verified end-to-end, App Store + Play Store approval received.\nNO-GO: Generation accuracy <75%, any P0 open, image storage not production-ready.",known_risks:"1. AI generation quality varies with photo quality — mitigation: image quality warnings before upload\n2. Handwritten recipe OCR accuracy on old/faded cards — mitigation: allow manual text correction as fallback\n3. Family sharing complexity — mitigation: start with invite-link simplicity, no complex role management in MVP\n4. App Store review time — mitigation: submit 2 weeks before target launch date\n5. Scope creep from emotional use case — mitigation: strictly enforce MVP scope",mitigations:"1. Image quality check before upload — warn user if photo is too dark or blurry\n2. Manual edit mode always available on every generated field\n3. Simple invite link (no email required) — lowest friction for non-technical family members\n4. Submit to App Store 2 weeks before target launch date\n5. Maintain a strict V2 backlog — any new idea goes there, not into the MVP sprint",dependencies:"AWS S3 bucket provisioning, Claude API access (OCR + generation), Expo build pipeline setup, Apple Developer + Google Play account registration, Firebase project for push notifications",existing_research:"12 user interviews with home cooks and adult children of elderly parents (March 2026). 89% have at least one family recipe they're worried about losing. 76% have tried photographing recipe cards but found the photos hard to use when actually cooking. Average time to manually transcribe a handwritten recipe: 18 minutes.",competitors:"• Paprika: Popular recipe manager but import-focused (web URLs), no handwriting OCR, no family sharing. $4.99 one-time.\n• Yummly: Discovery-focused, not preservation-focused. No handwritten import.\n• Recipe Keeper: Basic digitisation but no AI generation. No family sharing.\n• Google Photos: Stores images but no recipe structure or cooking interface.",budget:"Infrastructure: ~$50-150/month (AWS S3, PostgreSQL on Railway, Claude API ~$80/mo for generation). Target: profitable at 500 active family cookbooks on a $4.99/month subscription.",anything_else:"The emotional hook is the product's biggest asset and biggest responsibility. We're not just building a utility — we're helping families preserve irreplaceable memories. Open questions: Should we support voice memo input at launch or defer to V2? How do we handle recipes that exist in multiple family variations? Should generation be triggered automatically on upload or only on explicit user action?"};
 
-/* ═══ WORKFLOW PROMPTS ═══ */
-const WF_PROMPTS: Record<number,string>={
-  1:`Read CLAUDE.md and project-brief.md carefully. Then read all documents in this folder: prd.md, app-flow.md, design.md, backend-spec.md, security-checklist.md.
-
-Create a detailed build plan in plan.md with these phases:
-- Phase 1: Project setup (dependencies, folder structure, environment config)
-- Phase 2: Database schema and authentication setup
-- Phase 3: Core API endpoints
-- Phase 4: Frontend shell (layout, navigation, routing)
-- Phase 5: Feature pages (one subsection per screen)
-- Phase 6: Polish (error handling, loading states, responsive design)
-- Phase 7: Testing and deployment
-
-For each phase, list the specific files you will create or modify.
-Do NOT write any code yet. Just the plan. Wait for my approval.`,
-  2:`Read CLAUDE.md. Continue from plan.md.
-
-Execute Phase 1 (project setup), Phase 2 (database + auth), and Phase 3 (core API).
-Follow backend-spec.md for data models and API endpoints.
-Follow security-checklist.md for authentication implementation.
-
-After completing each phase, update plan.md to mark it done.
-Run any available tests after Phase 3.
-Report what was built and any issues encountered.`,
-  3:`Read CLAUDE.md. Continue from plan.md.
-
-Execute Phase 4 (frontend shell) and Phase 5 (feature pages).
-Follow design.md for all visual decisions — colors, typography, spacing, components.
-Follow app-flow.md for routing, navigation structure, and screen transitions.
-
-Build each screen listed in app-flow.md, connecting to the API endpoints from Phase 3.
-After completing each phase, update plan.md.
-Report what was built and any issues encountered.`,
-  4:`Read CLAUDE.md. Continue from plan.md.
-
-Execute Phase 6 (polish) and Phase 7 (testing + deployment).
-- Add proper error handling to all API calls
-- Add loading states to all async operations
-- Ensure responsive design works on mobile (min 375px width)
-- Run all tests and fix any failures
-- Set up deployment configuration
-
-Update plan.md with final status.
-Give me a summary of: what was built, what works, what needs attention, and any remaining issues.`,
-  5:`I have redesigned [SCREEN NAME] using Google Stitch.
-The new design is: [PASTE HTML OR DESCRIBE CHANGES]
-
-Update the existing component to match this new design.
-Keep ALL existing functionality — only change the visual layer.
-Follow design.md for design tokens (colors, spacing, typography).
-Do not modify any API calls, state management, or business logic.`,
-};
-
-const WF_SESSIONS=[
-  {n:1,t:"Setup & Plan",tm:"~20 min",d:"Read all docs, create plan.md. Do not write code yet.",c:"#9065b0"},
-  {n:2,t:"Backend",tm:"1–2 hrs",d:"DB, auth, and core API endpoints.",c:"#2383e2"},
-  {n:3,t:"Frontend",tm:"1–2 hrs",d:"All screens connected to the API.",c:"#448361"},
-  {n:4,t:"Polish + Deploy",tm:"~1 hr",d:"Error handling, responsive design, tests, and deployment.",c:"#d9730d"},
-  {n:5,t:"Stitch UI Refresh",tm:"~30 min",d:"Optional. Redesign screens in Stitch, apply via Claude Code.",c:"#ec4899"},
-];
 
 /* ═══ MAIN APP ═══ */
 export default function Cerebro(){
@@ -329,14 +256,11 @@ export default function Cerebro(){
   /* ── Derived from active project ── */
   const activeProject=projects.find(p=>p.id===activeProjectId)||null;
   const ans=activeProject?.currentAnswers||{};
-  const versions=activeProject?.versions||[];
   const docs=activeProject?.docs||null;
   const docxFiles=activeProject?.docxFiles||{};
   const docSources=activeProject?.docSources||{};
   const mdUploads=activeProject?.mdUploads||{};
-  const changeBrief=activeProject?.changeBrief||"";
   const mode=activeProject?.mode||null;
-  const currentVer=versions.length;
   const SECTIONS=mode==="avatar"?AVATAR:SPIRIT;
   const TOTAL_Q=SECTIONS.flatMap(s=>s.questions).length;
   const accent=mode==="avatar"?CL.purple:CL.green;
@@ -374,16 +298,39 @@ export default function Cerebro(){
   const permanentDelete=(id: string)=>{if(confirm("Permanently delete? This cannot be undone.")){setProjects(prev=>prev.filter(p=>p.id!==id));setOpenMenu(null);}};
 
   const upd=(id: string,v: string)=>{const na={...ans,[id]:v};updateActiveProject({currentAnswers:na,name:id==="product_name"?(v.trim()||activeProject?.name||"Untitled Project"):(activeProject?.name||"Untitled Project")});};
-  const addF=(id: string,f: FileList)=>setFiles(p=>({...p,[id]:[...(p[id]||[]),...Array.from(f)]}));
+  const addF=(id: string,f: FileList)=>{const arr=Array.from(f);setFiles(p=>({...p,[id]:[...(p[id]||[]),...arr]}));};
   const rmF=(id: string,i: number)=>setFiles(p=>({...p,[id]:p[id].filter((_,j)=>j!==i)}));
   const secProg=(i: number)=>{const s=SECTIONS[i];if(!s)return 0;return Math.round(s.questions.filter(q=>(ans[q.id]||"").trim()).length/s.questions.length*100);};
   const totAns=SECTIONS.flatMap(s=>s.questions).filter(q=>(ans[q.id]||"").trim()).length;
   const totProg=TOTAL_Q?Math.round(totAns/TOTAL_Q*100):0;
   const reqMiss=SECTIONS.flatMap(s=>s.questions).filter(q=>q.required&&!(ans[q.id]||"").trim());
-  const buildIntake=()=>{let o="# PROJECT INTAKE\n\n";SECTIONS.forEach(s=>{o+=`## ${s.icon} ${s.title}\n\n`;s.questions.forEach(q=>{o+=`### ${q.label}\n${(ans[q.id]||"").trim()||"*[Not provided]*"}\n\n`;});});return o;};
+  const buildIntake=()=>{
+    let o="# PROJECT INTAKE\n\n";
+    SECTIONS.forEach(s=>{
+      o+=`## ${s.icon} ${s.title}\n\n`;
+      s.questions.forEach(q=>{
+        o+=`### ${q.label}\n${(ans[q.id]||"").trim()||"*[Not provided]*"}\n\n`;
+        const qFiles=files[q.id]||[];
+        if(qFiles.length>0){
+          o+=`*Attached files: ${qFiles.map(f=>f.name).join(", ")}*\n\n`;
+        }
+      });
+    });
+    const allFiledQs=SECTIONS.flatMap(s=>s.questions).filter(q=>(files[q.id]||[]).length>0);
+    if(allFiledQs.length>0){
+      o+=`## 📎 Reference Files Attached\n\n`;
+      allFiledQs.forEach(q=>{
+        o+=`**${q.label}**\n`;
+        (files[q.id]||[]).forEach(f=>{o+=`- ${f.name} (${f.type})\n`;});
+        o+="\n";
+      });
+      o+=`> Note: These files were attached in CEREBRO but not transmitted via clipboard. If you want me to analyze the actual content, attach them directly to this chat before sending.`;
+    }
+    return o;
+  };
   const cp=async(t: string,k: string)=>{try{await navigator.clipboard.writeText(t);}catch{const el=document.createElement("textarea");el.value=t;document.body.appendChild(el);el.select();document.execCommand("copy");document.body.removeChild(el);}setCopied(p=>({...p,[k]:true}));setTimeout(()=>setCopied(p=>({...p,[k]:false})),2000);};
   const downloadMd = (key: string) => {
-    const content = key === "changeBrief" ? changeBrief : docs?.[key];
+    const content = docs?.[key];
     if (!content) return;
     const fileName = DT.find(d => d.key === key)?.file || `${key}.md`;
     const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
@@ -395,7 +342,7 @@ export default function Cerebro(){
     URL.revokeObjectURL(url);
   };
   const downloadDocx = async (key: string) => {
-    const content = key === "changeBrief" ? changeBrief : docs?.[key];
+    const content = docs?.[key];
     if (!content) return;
     const dtEntry = DT.find(d => d.key === key);
     const fileName = dtEntry?.file?.replace(".md", ".docx") || `${key}.docx`;
@@ -473,7 +420,6 @@ export default function Cerebro(){
         const content = docs?.[key];
         if (content && content.trim()) zip.file(filename, content);
       });
-      if (changeBrief && changeBrief.trim()) zip.file("change-brief.md", changeBrief);
       const blob = await zip.generateAsync({ type: "blob" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -594,10 +540,7 @@ export default function Cerebro(){
   };
   const save=useCallback(()=>{saveStorage({projects,activeProjectId});setFlash(true);setTimeout(()=>setFlash(false),1500);},[projects,activeProjectId]);
 
-  const getFieldStatus=(qId: string)=>{if(!versions.length)return null;const prev=versions[versions.length-1].ans;const o=(prev[qId]||"").trim();const n=(ans[qId]||"").trim();if(!o&&n)return"added";if(o&&!n)return"removed";if(o&&n&&o!==n)return"modified";return null;};
-  const fieldBorder=(qId: string)=>{const s=getFieldStatus(qId);if(s==="added")return`1px solid ${CL.green}`;if(s==="modified")return`1px solid ${CL.amber}`;if(s==="removed")return`1px solid ${CL.red}`;return`1px solid ${N.bd}`;};
-  const fieldBadge=(qId: string)=>{const s=getFieldStatus(qId);if(!s)return null;const c={added:{bg:"rgba(68,131,97,0.1)",color:CL.green,text:"NEW"},modified:{bg:"rgba(217,115,13,0.1)",color:CL.amber,text:"CHANGED"},removed:{bg:"rgba(235,87,87,0.1)",color:CL.red,text:"REMOVED"}}[s];return <span style={{padding:"1px 6px",borderRadius:4,background:c.bg,color:c.color,fontSize:10,fontWeight:600,marginLeft:6}}>{c.text}</span>;};
-  const loadVersion=(ver: number)=>{const v=versions.find(x=>x.ver===ver);if(v&&confirm(`Load V${ver} answers? Current unsaved changes will be lost.`)){updateActiveProject({currentAnswers:{...v.ans}});}};
+
 
   const renderMd=(text: string)=>{
     if(!text)return <p style={{color:N.ts,fontStyle:"italic",fontSize:13}}>No content.</p>;
@@ -618,25 +561,13 @@ export default function Cerebro(){
   };
 
   /* ── Generate ── */
-  const saveVersionSnapshot=()=>{
-    const newVer=versions.length+1;
-    const snapshot: ProjectVersion={ver:newVer,date:new Date().toISOString(),ans:{...ans},mode:activeProject?.mode||null};
-    let newCB=changeBrief;
-    if(newVer>1){const prevAns=versions[versions.length-1].ans;const diff=computeDiff(prevAns,ans,SECTIONS);newCB=generateChangeBrief(diff,newVer-1,newVer,ans.product_name||"Product");snapshot.changeBrief=newCB;}
-    const newVersions=[...versions,snapshot];
-    updateActiveProject({versions:newVersions,changeBrief:newCB});
-    return{newVersions,newCB};
-  };
-
   const handleCopyPrompt=()=>{
-    saveVersionSnapshot();
     cp(SYS+"\n\n---\n\n"+buildIntake(),"cb");
   };
 
   const handleGen=async()=>{
-    const{newVersions,newCB}=saveVersionSnapshot();
     setGenerating(true);setGenErr("");setGenProg("Preparing...");setTab("results");
-    const intake=buildIntake(),cMd=genClaudeMd(ans),pB=genBrief(ans),pr=genPrompts(ans);
+    const intake=buildIntake(),cMd=genClaudeMd(ans),pB=genBrief(ans);
     try{
       const callAPI=async(sys: string)=>{const r=await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:sys,messages:[{role:"user",content:intake}]})});if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e?.error?.message||`API ${r.status}`);}const data=await r.json();return(data.content as {type:string;text:string}[]).filter(i=>i.type==="text").map(i=>i.text).join("\n");};
       const SYS1=`You are a senior product/technical lead generating part of a build package. Produce exactly 3 files using this format:\n\n---FILE: [filename]---\n[content]\n---END FILE---\n\nFiles to produce:\n1. prd.md — PRD (14 sections, FR-001 IDs, acceptance criteria, MoSCoW priority). 800-1000 words.\n2. app-flow.md — App Flow (every route, auth flow, screen-by-screen interactions). 600-800 words.\n3. design.md — UI Design Guide (design tokens with hex values, components, breakpoints). 600-800 words.\n\nFlag gaps with [⚠️ ATTENTION NEEDED]. Use the product name in all headers.`;
@@ -670,20 +601,19 @@ export default function Cerebro(){
         if(allParts.length>=5)ks.forEach((k,i)=>{if(allParts[i])dm[k]=allParts[i];});
         else{dm.prd=full1+"\n\n"+full2;ks.slice(1).forEach(k=>{dm[k]="[⚠️] Use Copy to Clipboard — paste the prompt into a new Claude chat (Opus recommended) to generate all documents.";});}
       }
-      updateActiveProject({docs:{...dm,claudeMd:cMd,projectBrief:pB,prompts:pr,changeBrief:newCB||"No previous version to compare."},versions:newVersions,changeBrief:newCB});
+      updateActiveProject({docs:{...dm,claudeMd:cMd,projectBrief:pB}});
       setGenProg("");
     }catch(e){
       setGenErr(`${e instanceof Error?e.message:String(e)} — Use the Copy button on the last intake section instead.`);
-      updateActiveProject({docs:{prd:"",appFlow:"",design:"",backend:"",security:"",claudeMd:cMd,projectBrief:pB,prompts:pr,changeBrief:newCB||""},versions:newVersions,changeBrief:newCB});
+      updateActiveProject({docs:{prd:"",appFlow:"",design:"",backend:"",security:"",claudeMd:cMd,projectBrief:pB}});
       setGenProg("");
     }finally{setGenerating(false);}
   };
 
   const switchMode=(newMode: string)=>{updateActiveProject({mode:newMode});setShowModeConfirm(false);setSec(0);};
-  const cycleWfStatus=(n: number)=>{const cur=(activeProject?.workflowStatus||DEFAULT_WF_STATUS)[n]||"notStarted";const next=cur==="notStarted"?"inProgress":cur==="inProgress"?"complete":"notStarted";updateActiveProject({workflowStatus:{...(activeProject?.workflowStatus||DEFAULT_WF_STATUS),[n]:next}});};
   const handleReset=()=>{if(confirm("Clear this project's current answers? Version history will be kept.")){updateActiveProject({currentAnswers:{},name:"Untitled Project"});setFiles({});setSec(0);setTab("intake");}};
-  const loadTestData=()=>{updateActiveProject({currentAnswers:TEST_DATA,name:"FlowBoard"});setSec(0);setTab("intake");formRef.current?.scrollTo(0,0);};
-  const createTestProject=()=>{const id=genId();const p={...blankProject("avatar",id),name:"FlowBoard",currentAnswers:TEST_DATA};setProjects(prev=>[...prev,p]);openProject(id);};
+  const loadTestData=()=>{updateActiveProject({currentAnswers:TEST_DATA,name:"FamilyTable"});setSec(0);setTab("intake");formRef.current?.scrollTo(0,0);};
+  const createTestProject=()=>{const id=genId();const p={...blankProject("avatar",id),name:"FamilyTable",currentAnswers:TEST_DATA};setProjects(prev=>[...prev,p]);openProject(id);};
 
   /* ════════════════════════════════════════════════════════
      DASHBOARD
@@ -899,11 +829,11 @@ export default function Cerebro(){
           {/* Tab nav */}
           <div style={{fontSize:11,fontWeight:600,color:N.tm,padding:"2px 8px 4px",letterSpacing:.5,textTransform:"uppercase"}}>Navigation</div>
           {TABS.map(t=>{
-            const disabled=!["intake","results","versions","usage"].includes(t)&&!docs&&!generating;
+            const disabled=!["intake","results"].includes(t)&&!docs&&!generating;
             return(
               <button key={t} onClick={()=>!disabled&&setTab(t)} style={{width:"100%",display:"flex",alignItems:"center",gap:7,padding:"5px 8px",borderRadius:4,border:"none",background:tab===t?N.act:"transparent",color:disabled?N.tm:(tab===t?N.tx:N.ts),cursor:disabled?"default":"pointer",fontSize:13,textAlign:"left",fontWeight:tab===t?500:400}}
                 onMouseEnter={e=>{if(!disabled&&tab!==t)e.currentTarget.style.background=N.hov;}} onMouseLeave={e=>{if(tab!==t)e.currentTarget.style.background="transparent";}}>
-                {t==="intake"&&"📝"}{t==="results"&&"📄"}{t==="versions"&&"🔄"}{t==="workflow"&&"🗺️"}{t==="usage"&&"⚡"} {TL[t as keyof typeof TL]}
+                {t==="intake"&&"📝"}{t==="results"&&"📄"}{t==="workflow"&&"🗺️"} {TL[t as keyof typeof TL]}
               </button>
             );
           })}
@@ -966,7 +896,6 @@ export default function Cerebro(){
             )}
           </div>
 
-          {currentVer>0&&<span style={{padding:"3px 10px",borderRadius:12,background:N.hov,color:N.ts,fontSize:12,fontWeight:500,flexShrink:0}}>V{currentVer}</span>}
 
           {/* Mode toggle */}
           <div style={{position:"relative",flexShrink:0}}>
@@ -1010,15 +939,14 @@ export default function Cerebro(){
                 <div key={q.id} style={{marginBottom:28}}>
                   <div style={{marginBottom:6,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                     <label style={{fontSize:14,fontWeight:600,color:N.tx}}>{q.label}{q.required&&<span style={{color:CL.red,marginLeft:3}}>*</span>}</label>
-                    {fieldBadge(q.id)}
                   </div>
                   <p style={{fontSize:12,color:N.ts,margin:"0 0 8px",lineHeight:1.5}}>{q.guidance}</p>
                   {q.type==="text"
                     ?<input type="text" value={ans[q.id]||""} onChange={e=>upd(q.id,e.target.value)} placeholder={q.placeholder}
-                        style={{width:"100%",padding:"9px 12px",borderRadius:6,border:fieldBorder(q.id),background:N.bg,color:N.tx,fontSize:14,outline:"none",boxSizing:"border-box",fontFamily:F,transition:"border-color .15s",lineHeight:1.5}}
+                        style={{width:"100%",padding:"9px 12px",borderRadius:6,border:`1px solid ${N.bd}`,background:N.bg,color:N.tx,fontSize:14,outline:"none",boxSizing:"border-box",fontFamily:F,transition:"border-color .15s",lineHeight:1.5}}
                         onFocus={e=>e.currentTarget.style.borderColor=CL.blue} onBlur={e=>e.currentTarget.style.borderColor=N.bd}/>
                     :<textarea value={ans[q.id]||""} onChange={e=>upd(q.id,e.target.value)} placeholder={q.placeholder} rows={3}
-                        style={{width:"100%",padding:"9px 12px",borderRadius:6,border:fieldBorder(q.id),background:N.bg,color:N.tx,fontSize:14,outline:"none",resize:"vertical",lineHeight:1.6,minHeight:88,boxSizing:"border-box",fontFamily:F,transition:"border-color .15s"}}
+                        style={{width:"100%",padding:"9px 12px",borderRadius:6,border:`1px solid ${N.bd}`,background:N.bg,color:N.tx,fontSize:14,outline:"none",resize:"vertical",lineHeight:1.6,minHeight:88,boxSizing:"border-box",fontFamily:F,transition:"border-color .15s"}}
                         onFocus={e=>e.currentTarget.style.borderColor=CL.blue} onBlur={e=>e.currentTarget.style.borderColor=N.bd}/>
                   }
                   <div style={{marginTop:7,display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
@@ -1052,11 +980,11 @@ export default function Cerebro(){
                       <p style={{fontSize:12,color:N.ts,margin:"0 0 16px",lineHeight:1.6}}>Calls the Claude API directly. Results appear in the Docs tab. Requires API access (may not work on localhost).</p>
                       <button onClick={handleGen} disabled={reqMiss.length>0}
                         style={{padding:"7px 16px",borderRadius:6,border:"none",background:reqMiss.length>0?N.hov:CL.green,color:reqMiss.length>0?N.tm:"#fff",cursor:reqMiss.length>0?"default":"pointer",fontSize:13,fontWeight:500}}>
-                        ⚡ Generate V{currentVer+1}</button>
+                        ⚡ Generate Docs</button>
                       {reqMiss.length>0&&<p style={{margin:"6px 0 0",fontSize:11,color:CL.red}}>Complete required fields first</p>}
                     </div>
                   </div>
-                  <p style={{margin:0,fontSize:12,color:N.ts,lineHeight:1.6}}>ℹ️ Both methods save a V{currentVer+1} snapshot of your answers. Edit your answers and regenerate to create V{currentVer+2} with a Change Brief.</p>
+                  <p style={{margin:0,fontSize:12,color:N.ts,lineHeight:1.6}}>ℹ️ Copy the prompt to generate docs manually, or use Generate Docs to call the API directly.</p>
                 </div>
               )}
             </div>
@@ -1096,9 +1024,9 @@ export default function Cerebro(){
                   {/* Tab bar — always shown */}
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 20px",borderBottom:`1px solid ${N.bd}`,flexShrink:0,flexWrap:"wrap",gap:4}}>
                     <div style={{display:"flex",gap:1,overflowX:"auto"}}>
-                      {DT.filter(d=>d.key!=="changeBrief"||changeBrief).map(d=>(
+                      {DT.map(d=>(
                         <button key={d.key} onClick={()=>{setActiveDoc(d.key);setShowPaste(p=>({...p,[d.key]:false}));}}
-                          style={{padding:"5px 12px",borderRadius:5,border:"none",fontSize:13,fontWeight:activeDoc===d.key?600:400,whiteSpace:"nowrap",background:activeDoc===d.key?N.act:"transparent",color:activeDoc===d.key?N.tx:d.key==="changeBrief"?CL.amber:N.ts,cursor:"pointer"}}
+                          style={{padding:"5px 12px",borderRadius:5,border:"none",fontSize:13,fontWeight:activeDoc===d.key?600:400,whiteSpace:"nowrap",background:activeDoc===d.key?N.act:"transparent",color:activeDoc===d.key?N.tx:N.ts,cursor:"pointer"}}
                           onMouseEnter={e=>{if(activeDoc!==d.key)e.currentTarget.style.background=N.hov;}} onMouseLeave={e=>{if(activeDoc!==d.key)e.currentTarget.style.background="transparent";}}>
                           {d.label}
                         </button>
@@ -1117,9 +1045,9 @@ export default function Cerebro(){
                   {/* Doc content area */}
                   {(()=>{
                     const dtEntry=DT.find(d=>d.key===activeDoc);
-                    const hasContent=activeDoc==="changeBrief"?!!changeBrief:!!(docs&&docs[activeDoc]);
+                    const hasContent=!!(docs&&docs[activeDoc]);
                     const isUploadable=dtEntry?.uploadable===true;
-                    const docContent=activeDoc==="changeBrief"?changeBrief:(docs?.[activeDoc]||"");
+                    const docContent=docs?.[activeDoc]||"";
                     const source=docSources[activeDoc];
                     const uploadedDocxFiles=docxFiles[activeDoc]||[];
                     const uploadedMdFiles=mdUploads[activeDoc]||[];
@@ -1250,192 +1178,130 @@ export default function Cerebro(){
           </div>
         )}
 
-        {/* ═══ VERSIONS ═══ */}
-        {tab==="versions"&&(
-          <div style={{flex:1,overflowY:"auto",padding:"40px 56px 60px"}}>
-            <div style={{maxWidth:700,margin:"0 auto"}}>
-              <h2 style={{fontSize:26,fontWeight:700,color:N.tx,margin:"0 0 8px",letterSpacing:-0.3}}>Version History</h2>
-              <p style={{fontSize:14,color:N.ts,margin:"0 0 28px",lineHeight:1.6}}>Each generation saves a snapshot. Iterate without rebuilding from scratch.</p>
-              {versions.length===0
-                ?<div style={{border:`2px dashed ${N.bd}`,borderRadius:8,padding:48,textAlign:"center"}}>
-                    <div style={{fontSize:32,marginBottom:10}}>📭</div>
-                    <p style={{color:N.ts,fontSize:14,margin:0}}>No versions yet. Fill the intake form and generate to create V1.</p>
-                  </div>
-                :<>
-                  {versions.map((v,i)=>(
-                    <div key={v.ver} style={{border:`1px solid ${N.bd}`,borderRadius:8,marginBottom:8,overflow:"hidden"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px"}}>
-                        <div style={{width:34,height:34,borderRadius:7,background:N.hov,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:accent,flexShrink:0}}>V{v.ver}</div>
-                        <div style={{flex:1}}>
-                          <div style={{fontSize:14,fontWeight:600,color:N.tx}}>{v.ans.product_name||"Untitled"}</div>
-                          <div style={{fontSize:12,color:N.ts}}>{new Date(v.date).toLocaleString()} · {(v.mode||mode)==="avatar"?"⚡ Avatar State":"🌿 Spirit Guide"}</div>
-                        </div>
-                        <button onClick={()=>loadVersion(v.ver)} style={{padding:"5px 14px",borderRadius:5,border:`1px solid ${N.bd}`,background:"none",color:N.ts,cursor:"pointer",fontSize:12,flexShrink:0}}
-                          onMouseEnter={e=>e.currentTarget.style.borderColor=CL.blue} onMouseLeave={e=>e.currentTarget.style.borderColor=N.bd}>Load</button>
-                      </div>
-                      {i>0&&<div style={{padding:"0 18px 12px"}}>
-                        {(()=>{const prev=versions[i-1].ans;const diff=computeDiff(prev,v.ans,mode==="avatar"?AVATAR:SPIRIT);return(
-                          <div style={{fontSize:12,color:N.ts,display:"flex",gap:12}}>
-                            {diff.added.length>0&&<span style={{color:CL.green}}>+{diff.added.length} added</span>}
-                            {diff.modified.length>0&&<span style={{color:CL.amber}}>{diff.modified.length} changed</span>}
-                            {diff.removed.length>0&&<span style={{color:CL.red}}>{diff.removed.length} removed</span>}
-                            <span>{diff.unchanged} unchanged</span>
-                          </div>
-                        );})()}
-                      </div>}
-                    </div>
-                  ))}
-                  <div style={{border:`1px dashed ${N.bd}`,borderRadius:8,padding:24,textAlign:"center",marginTop:16}}>
-                    <p style={{fontSize:14,color:N.ts,margin:"0 0 14px",lineHeight:1.5}}>Ready to iterate? Current answers are the draft for V{versions.length+1}.</p>
-                    <button onClick={()=>setTab("intake")} style={{padding:"7px 20px",borderRadius:6,border:"none",background:accent,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:500}}>Edit & Create V{versions.length+1}</button>
-                  </div>
-                  {changeBrief&&(
-                    <div style={{border:`1px solid rgba(217,115,13,0.25)`,borderRadius:8,padding:18,marginTop:16,background:"rgba(217,115,13,0.04)"}}>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                        <h3 style={{fontSize:15,fontWeight:600,color:CL.amber,margin:0}}>Latest Change Brief</h3>
-                        <button onClick={()=>cp(changeBrief,"vbr")} style={{padding:"4px 12px",borderRadius:5,border:`1px solid ${N.bd}`,background:copied.vbr?"rgba(68,131,97,0.08)":N.bg,color:copied.vbr?CL.green:N.ts,cursor:"pointer",fontSize:12}}>{copied.vbr?"Copied ✓":"📋 Copy"}</button>
-                      </div>
-                      <p style={{fontSize:13,color:N.ts,margin:"0 0 10px",lineHeight:1.5}}>Paste as change-brief.md, then give Claude Code the update prompt at the bottom.</p>
-                      <details><summary style={{fontSize:13,color:N.ts,cursor:"pointer"}}>Preview</summary>
-                        <div style={{background:N.sbg,borderRadius:6,padding:14,marginTop:8,maxHeight:300,overflowY:"auto"}}>{renderMd(changeBrief)}</div>
-                      </details>
-                    </div>
-                  )}
-                </>
-              }
-            </div>
-          </div>
-        )}
 
         {/* ═══ WORKFLOW ═══ */}
-        {tab==="workflow"&&(
-          <div style={{flex:1,overflowY:"auto",padding:"40px 56px 60px"}}>
-            <div style={{maxWidth:700,margin:"0 auto"}}>
-              <h2 style={{fontSize:26,fontWeight:700,color:N.tx,margin:"0 0 8px",letterSpacing:-0.3}}>Build Workflow</h2>
-              <p style={{fontSize:14,color:N.ts,margin:"0 0 24px",lineHeight:1.5}}>Follow these sessions in order to build your product with Claude Code.</p>
-
-              {/* Iteration Mode Banner */}
-              {currentVer>1&&(
-                <div style={{background:"rgba(217,115,13,0.08)",border:`1px solid rgba(217,115,13,0.25)`,borderRadius:10,padding:"18px 20px",marginBottom:24}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-                    <h3 style={{fontSize:15,fontWeight:700,color:CL.amber,margin:0}}>🔄 Iteration Mode — V{currentVer}</h3>
-                    <button onClick={()=>setTab("versions")} style={{padding:"5px 14px",borderRadius:5,border:"none",background:CL.amber,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:600}}>Go to Versions →</button>
-                  </div>
-                  <p style={{fontSize:13,color:N.ts,margin:0,lineHeight:1.5}}>You&apos;re on V{currentVer}. Instead of running all build sessions again, use the Change Brief from the Versions tab. It contains only what changed and a ready-to-paste Claude Code prompt for surgical updates.</p>
-                </div>
-              )}
-
-              {/* Session Cards */}
-              <div style={{opacity:currentVer>1?0.55:1}}>
-                {currentVer>1&&<p style={{fontSize:12,color:N.ts,margin:"0 0 12px",fontStyle:"italic"}}>Full build sessions below are for V1 initial builds. For V2+ iterations, use the Change Brief.</p>}
-                {WF_SESSIONS.map(s=>{
-                  const isOpen=expandedSession===s.n;
-                  const wfSt=(activeProject?.workflowStatus||DEFAULT_WF_STATUS)[s.n]||"notStarted";
-                  const stIcon=wfSt==="complete"?"✅":wfSt==="inProgress"?"🔄":"⬜";
-                  const cpKey=`wf${s.n}`;
+        {tab==="workflow"&&(()=>{
+          type WfPrompt={key:string;text:string};
+          type WfSprint={id:string;label:string;items:string[];prompts?:WfPrompt[];promptLabels?:string[]};
+          type WfPhase={id:string;label:string;desc:string;gate?:string;noSprint?:string;tipText?:string;sprints?:WfSprint[];deploySteps?:string[];prompts?:WfPrompt[];promptLabels?:string[]};
+          const wfStatus=activeProject?.workflowStatus||{};
+          const toggleItem=(key: string)=>{updateActiveProject({workflowStatus:{...wfStatus,[key]:!wfStatus[key]}});};
+          const cpBlock=(text: string,key: string)=>(
+            <div style={{position:"relative",borderRadius:7,overflow:"hidden",marginTop:10}}>
+              <div style={{background:"#1e1e2e",padding:"14px 16px",paddingRight:110,borderRadius:7}}>
+                <pre style={{margin:0,fontSize:12,color:"#cdd6f4",fontFamily:"'Fira Code','Consolas',monospace",whiteSpace:"pre-wrap",lineHeight:1.75,wordBreak:"break-word"}}>{text}</pre>
+              </div>
+              <button onClick={()=>cp(text,key)} style={{position:"absolute",top:10,right:10,padding:"4px 10px",borderRadius:5,border:"none",background:copied[key]?"rgba(68,200,120,0.25)":"rgba(255,255,255,0.12)",color:copied[key]?"#6ee7b7":"#cdd6f4",cursor:"pointer",fontSize:11,fontWeight:500,whiteSpace:"nowrap",transition:"all 0.15s"}}>
+                {copied[key]?"✓ Copied!":"📋 Copy"}
+              </button>
+            </div>
+          );
+          const tip=(text: string)=>(
+            <div style={{background:"rgba(253,186,116,0.08)",border:"1px solid rgba(253,186,116,0.2)",borderRadius:6,padding:"8px 12px",margin:"12px 0",fontSize:12,color:"#d97706",lineHeight:1.5}}>💡 {text}</div>
+          );
+          const checkList=(items: string[],prefix: string)=>{
+            const done=items.filter((_,i)=>wfStatus[`${prefix}_${i}`]).length;
+            return{done,total:items.length,el:(
+              <div style={{marginTop:10}}>
+                {items.map((item,i)=>{
+                  const k=`${prefix}_${i}`;
                   return(
-                    <div key={s.n} style={{border:`1px solid ${isOpen?s.c+"88":N.bd}`,borderRadius:9,marginBottom:8,background:isOpen?s.c+"07":"transparent",transition:"border-color 0.15s"}}>
-                      <div style={{padding:"13px 18px",display:"flex",alignItems:"center",gap:12,cursor:"pointer"}} onClick={()=>setExpandedSession(isOpen?null:s.n)}>
-                        <div style={{width:30,height:30,borderRadius:7,background:s.c+"1a",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:s.c,flexShrink:0}}>{s.n}</div>
+                    <label key={k} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"5px 0",cursor:"pointer",fontSize:13,color:wfStatus[k]?N.ts:N.tx,textDecoration:wfStatus[k]?"line-through":"none",lineHeight:1.5}}>
+                      <input type="checkbox" checked={!!wfStatus[k]} onChange={()=>toggleItem(k)} style={{marginTop:2,flexShrink:0,accentColor:CL.green}}/>
+                      {item}
+                    </label>
+                  );
+                })}
+              </div>
+            )};
+          };
+
+          const PHASES: WfPhase[]=[
+            {id:"p1",label:"Phase 1 — Ideation & Scoping",desc:"Run the cerebro-build-os skill in a new Claude chat. It guides you through a 12-question ideation interview and produces a confirmed project brief before you touch CEREBRO.",gate:"You can answer: what does it do, who uses it, what are the must-haves?",noSprint:"No sprint card — this phase is a Claude chat."},
+            {id:"p2",label:"Phase 2 — CEREBRO Intake",desc:"Run CEREBRO to generate your 8 build documents. Choose Avatar State (~47 questions) or Spirit Guide (~31 questions).",gate:"All 8 .md files generated and saved locally.",noSprint:"No sprint card — this phase IS CEREBRO."},
+            {id:"p3",label:"Phase 3 — Project Setup",desc:"Configure everything before writing a single line of feature code. Deploy first, build second.",gate:"Claude Project configured. Vercel deploying (even if blank). CLAUDE.md in the project root.",sprints:[
+              {id:"s0",label:"Sprint 0 — Project Setup [P3]",items:["Create desktop folder structure (/docs, /change-briefs, /sprints, /assets)","Copy all 8 CEREBRO .md files into /docs/","Copy CLAUDE.md from /docs/ to the project root","Create Claude Project → upload all 8 .md files to Project Knowledge","Set system prompt in Claude Project","Create GitHub repo → init commit → push","Connect repo to Vercel → confirm blank deploy works","Set all env vars in Vercel dashboard","Open VS Code → confirm Claude Code extension is installed"]}
+            ]},
+            {id:"p4",label:"Phase 4 — Sprint Build",desc:"Build V1 using Claude Code. Three sprints, new Claude Code session per sprint. Always use the plan-first gate.",gate:"Core app works end-to-end and is live on Vercel.",tipText:"Use Sonnet for implementation — it's faster and cheaper. Type /model in Claude Code to switch. Use Opus only for complex architecture decisions. Type /compact when sessions feel slow. Commit after every working session.",sprints:[
+              {id:"s1",label:"Sprint 1 — Build Plan + Backend Foundation",items:["Open VS Code → new Claude Code session","Paste Session 1 prompt (below) → review build plan → approve","Claude Code: Phase 1 — project setup, dependencies, folder structure","Claude Code: Phase 2 — database schema + authentication","Claude Code: Phase 3 — core API endpoints","Run any available tests → fix errors","Commit: 'feat: backend foundation and auth'","Update plan.md to mark phases done","Run P7 deploy → smoke test API endpoints"],prompts:[{key:"wf_s1",text:`Read CLAUDE.md and all .md files in the /docs/ folder carefully.\n\nThen create a detailed build plan in plan.md with these phases:\n  Phase 1: Project setup (dependencies, folder structure, env config)\n  Phase 2: Database schema and authentication setup\n  Phase 3: Core API endpoints\n  Phase 4: Frontend shell (layout, navigation, routing)\n  Phase 5: Feature pages (one subsection per screen from app-flow.md)\n  Phase 6: Polish (error handling, loading states, responsive design)\n  Phase 7: Testing and deployment\n\nFor each phase, list the specific files you will create or modify.\nDo NOT write any code yet. Show me the plan and wait for my approval.`}]},
+              {id:"s2",label:"Sprint 2 — Frontend Shell + Feature Pages",items:["Open VS Code → new Claude Code session","Paste Session 3 prompt (below) → review plan if needed → approve","Claude Code: Phase 4 — frontend shell, layout, navigation, routing","Claude Code: Phase 5 — feature pages per app-flow.md","QA each screen in the browser → fix layout and connection issues","Commit: 'feat: frontend shell and feature pages'","Run P7 deploy → smoke test all screens"],prompts:[{key:"wf_s2",text:`Read CLAUDE.md. Continue from plan.md.\n\nExecute Phase 4 (frontend shell) and Phase 5 (feature pages).\nFollow design.md for all visual decisions — colours, typography, spacing, components.\nFollow app-flow.md for routing, navigation structure, and screen transitions.\n\nBuild each screen listed in app-flow.md, connecting to the API endpoints from Phase 3.\nAfter completing each phase, update plan.md.\nReport what was built and any issues encountered.`}]},
+              {id:"s3",label:"Sprint 3 — Polish + First Deploy",items:["Open VS Code → new Claude Code session","Paste Session 4 prompt (below) → approve","Claude Code: Phase 6 — error handling, loading states, responsive design","Claude Code: Phase 7 — run tests, fix failures, deployment config","Verify mobile responsive at minimum 375px width","Commit: 'feat: polish and error handling'","Merge to main → Vercel auto-deploys","Smoke test 5 core user flows on the live URL","Update change-log.md in /change-briefs/ to note V1 complete"],prompts:[{key:"wf_s3",text:`Read CLAUDE.md. Continue from plan.md.\n\nExecute Phase 6 (polish) and Phase 7 (testing + deployment):\n  - Add error handling to all API calls\n  - Add loading states to all async operations\n  - Ensure responsive design works on mobile (min 375px width)\n  - Run all tests and fix any failures\n  - Set up deployment configuration\n\nUpdate plan.md with final status.\nGive me a summary of: what was built, what works, what needs attention.`}]}
+            ]},
+            {id:"p5",label:"Phase 5 — Iteration (Change Brief Loop)",desc:"After V1 ships, every new feature or change uses the cerebro-change-brief skill inside your Claude Project. Changes are surgical, documented, and version-tracked.",tipText:"Claude Code: use Sonnet for implementation. Claude Project: use Opus for writing and refining change briefs.",sprints:[
+              {id:"s4",label:"Sprint 4+ — [Feature Name] — V[N] Iteration",items:["Open Claude Project → new chat named: CB-[date]-[feature]","Type: CB: [describe what you want to change] — this triggers the skill","Upload current change-log.md (V3+ only)","Skill searches project knowledge and writes the change brief","Review change brief → confirm scope and 'What\u2019s NOT Changing' section","Save change-brief-v[N].md and change-log.md to /change-briefs/","Open new Claude Code session → paste Claude Code prompt from the brief","Review plan → approve → Claude Code implements","QA in browser → fix → commit","P7 deploy → close sprint in Notion"],prompts:[{key:"wf_s4_cb",text:`CB: [describe what you want to change]\n\n[upload your current change-log.md here — required for V3+]`},{key:"wf_s4_cc",text:`Read change-brief-v[N].md and change-log.md in this project folder.\n\nThis is a V[N] update. Make ONLY the changes listed in the brief.\n\nBefore writing any code:\n1. List every file you will modify\n2. Describe what you will change in each file\n3. Wait for my approval before proceeding\n\nDo not rebuild from scratch. Surgical edits only.`}],promptLabels:["Change brief trigger prompt","Claude Code implementation prompt"]}
+            ]},
+            {id:"p6",label:"Phase 6 — UI Polish (Stitch Loop)",desc:"Optional. When the app works but the visual design needs a lift. Google Stitch lets you redesign screens, then Claude Code applies the visual changes without touching business logic.",tipText:"This is visual-layer only. Never pass your full codebase into a Stitch session — just describe or import the screen you want to redesign.",sprints:[
+              {id:"sN",label:"Sprint N — UI Polish — Stitch Refresh",items:["Identify the screen(s) to redesign","Open stitch.withgoogle.com → redesign the selected screen(s)","Export as HTML or write DESIGN.md with the changes","Open new Claude Code session → paste Stitch prompt","QA visual changes → no logic should be broken","Commit: 'design: [screen name] visual refresh'","P7 deploy → smoke test"],prompts:[{key:"wf_sN",text:`I have redesigned [SCREEN NAME] using Google Stitch.\nThe new design is: [paste HTML or describe the changes]\n\nUpdate the existing component to match this new design.\nKeep ALL existing functionality — only change the visual layer.\nFollow design.md for design tokens (colours, spacing, typography).\nDo not modify any API calls, state management, or business logic.`}]}
+            ]},
+            {id:"p7",label:"Phase 7 — Deploy & Monitor",desc:"P7 runs after every sprint — not just at the end of the project. Every merge to main triggers a Vercel auto-deploy. Verify it worked and log the state.",deploySteps:["Merge sprint branch to main → Vercel auto-deploys","Open the live Vercel URL → confirm the deploy succeeded","Smoke test 3–5 core user flows on the live URL","Check Vercel function logs for any runtime errors","Update change-log.md in /change-briefs/ — note what was deployed and when","Archive the sprint in Notion → mark status: Complete"],prompts:[{key:"wf_p7_fail",text:`The Vercel deploy failed. Check the build logs and terminal output.\nDiagnose the error and fix it. Report what the error was and what you changed.`}],promptLabels:["Failed deploy prompt"]}
+          ];
+
+          return(
+            <div style={{flex:1,overflowY:"auto",padding:"40px 56px 60px"}}>
+              <div style={{maxWidth:720,margin:"0 auto"}}>
+                <h2 style={{fontSize:26,fontWeight:700,color:N.tx,margin:"0 0 6px",letterSpacing:-0.3}}>Build Workflow</h2>
+                <p style={{fontSize:14,color:N.ts,margin:"0 0 28px",lineHeight:1.6}}>Your complete build system — from first idea to shipped product.</p>
+                {PHASES.map(phase=>{
+                  const isOpen=expandedSession===phase.id as unknown as number;
+                  return(
+                    <div key={phase.id} style={{border:`1px solid ${isOpen?accent+"88":N.bd}`,borderRadius:9,marginBottom:8,background:isOpen?accent+"05":"transparent",transition:"border-color 0.15s"}}>
+                      <div style={{padding:"14px 18px",display:"flex",alignItems:"center",gap:12,cursor:"pointer"}} onClick={()=>setExpandedSession(isOpen?null:phase.id as unknown as number)}>
                         <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:14,fontWeight:600,color:N.tx}}>{s.t}</div>
-                          <div style={{fontSize:12,color:N.ts}}>{s.tm}</div>
+                          <div style={{fontSize:15,fontWeight:700,color:N.tx}}>{phase.label}</div>
                         </div>
-                        {!isOpen&&<div style={{fontSize:13,color:N.ts,maxWidth:220,textAlign:"right",flexShrink:0}}>{s.d}</div>}
-                        <button onClick={e=>{e.stopPropagation();cycleWfStatus(s.n);}} title="Toggle status" style={{fontSize:15,background:"none",border:"none",cursor:"pointer",padding:"2px 4px",flexShrink:0,lineHeight:1}}>{stIcon}</button>
                         <span style={{fontSize:11,color:N.tm,flexShrink:0,userSelect:"none"}}>{isOpen?"▲":"▼"}</span>
                       </div>
                       {isOpen&&(
-                        <div style={{padding:"0 18px 16px"}}>
-                          <p style={{fontSize:13,color:N.ts,margin:"0 0 12px",lineHeight:1.6}}>{s.d}</p>
-                          <div style={{position:"relative",borderRadius:7,overflow:"hidden"}}>
-                            <div style={{background:"#1e1e2e",padding:"14px 16px",paddingRight:110,borderRadius:7}}>
-                              <pre style={{margin:0,fontSize:12,color:"#cdd6f4",fontFamily:"'Fira Code','Consolas',monospace",whiteSpace:"pre-wrap",lineHeight:1.75,wordBreak:"break-word"}}>{WF_PROMPTS[s.n]}</pre>
+                        <div style={{padding:"0 18px 20px"}}>
+                          <p style={{fontSize:13,color:N.ts,margin:"0 0 12px",lineHeight:1.6}}>{phase.desc}</p>
+                          {phase.tipText&&tip(phase.tipText)}
+                          {phase.noSprint&&<p style={{fontSize:12,color:N.tm,fontStyle:"italic",margin:"0 0 8px"}}>{phase.noSprint}</p>}
+                          {phase.gate&&<div style={{background:N.hov,borderRadius:6,padding:"8px 12px",fontSize:12,color:N.ts,margin:"8px 0 0"}}>✅ Gate: {phase.gate}</div>}
+                          {phase.sprints&&phase.sprints.map(sprint=>{
+                            const cl=checkList(sprint.items,sprint.id);
+                            const allDone=cl.done===cl.total;
+                            return(
+                              <div key={sprint.id} style={{border:`1px solid ${N.bd}`,borderRadius:7,padding:"14px 16px",marginTop:14,background:N.sbg}}>
+                                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+                                  <div style={{fontSize:14,fontWeight:600,color:N.tx}}>{sprint.label}</div>
+                                  <div style={{fontSize:11,color:allDone?CL.green:N.ts,fontWeight:allDone?600:400}}>{allDone?"✅ Complete":`${cl.done}/${cl.total} done`}</div>
+                                </div>
+                                {cl.el}
+                                {sprint.prompts&&sprint.prompts.map((p,pi)=>(
+                                  <div key={p.key}>
+                                    {sprint.promptLabels&&<div style={{fontSize:12,fontWeight:600,color:N.ts,marginTop:14,marginBottom:2}}>{sprint.promptLabels[pi]}</div>}
+                                    {cpBlock(p.text,p.key)}
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })}
+                          {phase.deploySteps&&(
+                            <div style={{border:`1px solid ${N.bd}`,borderRadius:7,padding:"14px 16px",marginTop:14,background:N.sbg}}>
+                              <div style={{fontSize:14,fontWeight:600,color:N.tx,marginBottom:8}}>Deploy checklist (every sprint)</div>
+                              {phase.deploySteps.map((s,i)=>(
+                                <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"4px 0",fontSize:13,color:N.ts,lineHeight:1.5}}>
+                                  <span style={{color:N.tm,flexShrink:0}}>{i+1}.</span>{s}
+                                </div>
+                              ))}
+                              {phase.prompts&&phase.prompts.map((p,pi)=>(
+                                <div key={p.key}>
+                                  {phase.promptLabels&&<div style={{fontSize:12,fontWeight:600,color:N.ts,marginTop:14,marginBottom:2}}>{phase.promptLabels[pi]}</div>}
+                                  {cpBlock(p.text,p.key)}
+                                </div>
+                              ))}
                             </div>
-                            <button onClick={()=>cp(WF_PROMPTS[s.n],cpKey)} style={{position:"absolute",top:10,right:10,padding:"4px 10px",borderRadius:5,border:"none",background:copied[cpKey]?"rgba(68,200,120,0.25)":"rgba(255,255,255,0.12)",color:copied[cpKey]?"#6ee7b7":"#cdd6f4",cursor:"pointer",fontSize:11,fontWeight:500,whiteSpace:"nowrap",transition:"all 0.15s"}}>
-                              {copied[cpKey]?"✓ Copied!":"📋 Copy Prompt"}
-                            </button>
-                          </div>
+                          )}
                         </div>
                       )}
                     </div>
                   );
                 })}
               </div>
-
-              {/* Tips Panel */}
-              <div style={{border:`1px solid ${N.bd}`,borderRadius:9,padding:"18px 20px",marginTop:24}}>
-                <h3 style={{fontSize:14,fontWeight:700,color:N.tx,margin:"0 0 14px"}}>Tips</h3>
-                {[
-                  ["Start each session fresh","Open a new Claude Code conversation for each session. Old conversation history eats tokens and causes Claude to forget instructions."],
-                  ["Don't skip Session 1","The build plan is the most important step. Review it carefully before approving. It's much cheaper to fix a plan than to fix code."],
-                  ["Use Sonnet for building","Type /model in Claude Code to switch to Sonnet. It's faster and uses fewer tokens than Opus for implementation work. Save Opus for complex architecture decisions."],
-                  ["Compact regularly","Type /compact when Claude Code feels slow or starts forgetting context. It clears old conversation while keeping important information."],
-                  ["Check your usage","Type /status to see how much of your usage limit you've consumed in the current window."],
-                  ["Commit after each session","Tell Claude Code: \"Commit with message: [describe what was built]\". This creates a checkpoint you can always go back to."],
-                ].map(([title,body],i,arr)=>(
-                  <div key={i} style={{marginBottom:i<arr.length-1?10:0}}>
-                    <span style={{fontSize:13,fontWeight:600,color:N.tx}}>{title}</span>
-                    <span style={{fontSize:13,color:N.ts}}> — {body}</span>
-                  </div>
-                ))}
-              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
-        {/* ═══ USAGE ═══ */}
-        {tab==="usage"&&(
-          <div style={{flex:1,overflowY:"auto",padding:"40px 56px 60px"}}>
-            <div style={{maxWidth:700,margin:"0 auto"}}>
-              <h2 style={{fontSize:26,fontWeight:700,color:N.tx,margin:"0 0 8px",letterSpacing:-0.3}}>Usage Guide</h2>
-              <p style={{fontSize:14,color:N.ts,margin:"0 0 20px"}}>Claude subscription plans and token-saving tips.</p>
-              <div style={{border:`1px solid ${N.bd}`,borderRadius:8,padding:"18px 20px",marginBottom:20,background:N.sbg}}>
-                <h3 style={{fontSize:15,fontWeight:600,color:N.tx,margin:"0 0 12px"}}>📦 What CEREBRO Generates</h3>
-                <p style={{margin:"0 0 8px",fontSize:13,color:N.ts,lineHeight:1.6}}>Claude generates <strong style={{color:N.tx}}>10 files</strong> — 5 Markdown files for Claude Code and 5 Word documents for stakeholder sharing.</p>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
-                  <div style={{background:N.bg,borderRadius:6,padding:"10px 14px",border:`1px solid ${N.bd}`}}>
-                    <div style={{fontSize:11,fontWeight:600,color:CL.blue,marginBottom:4}}>Markdown Files (.md)</div>
-                    <div style={{fontSize:12,color:N.ts,lineHeight:1.6}}>prd.md · app-flow.md · design.md · backend-spec.md · security-checklist.md</div>
-                    <div style={{fontSize:11,color:N.ts,marginTop:4}}>Drop these in your project folder for Claude Code.</div>
-                  </div>
-                  <div style={{background:N.bg,borderRadius:6,padding:"10px 14px",border:`1px solid ${N.bd}`}}>
-                    <div style={{fontSize:11,fontWeight:600,color:CL.purple,marginBottom:4}}>Word Documents (.docx)</div>
-                    <div style={{fontSize:12,color:N.ts,lineHeight:1.6}}>prd.docx · app-flow.docx · design.docx · backend-spec.docx · security-checklist.docx</div>
-                    <div style={{fontSize:11,color:N.ts,marginTop:4}}>Share with your team, investors, or stakeholders.</div>
-                  </div>
-                </div>
-                <p style={{margin:0,fontSize:12,color:N.ts,lineHeight:1.6}}>💡 If you used the copy-paste method, upload your generated documents back into CEREBRO using the upload buttons on the <strong style={{color:N.tx}}>Docs tab</strong>.</p>
-              </div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:20}}>
-                {[{p:"Pro",pr:"$20/mo",c:CL.blue},{p:"Max 5x",pr:"$100/mo",c:CL.purple},{p:"Max 20x",pr:"$200/mo",c:CL.amber}].map(x=>(
-                  <div key={x.p} style={{border:`1px solid ${N.bd}`,borderRadius:8,padding:"16px 18px"}}>
-                    <div style={{fontSize:12,fontWeight:600,color:x.c,marginBottom:5}}>{x.p}</div>
-                    <div style={{fontSize:22,fontWeight:700,color:N.tx}}>{x.pr}</div>
-                  </div>
-                ))}
-              </div>
-              <div style={{border:`1px solid ${N.bd}`,borderRadius:8,padding:"18px 20px",marginBottom:14}}>
-                <h3 style={{fontSize:15,fontWeight:600,color:N.tx,margin:"0 0 12px"}}>Token-Saving Tips</h3>
-                {["Sonnet for building (/model)","Fresh sessions per task","Use /compact when slow","Be specific in prompts","Off-peak hours stretch further","Instructions in files, not chat"].map((t,i)=>(
-                  <p key={i} style={{margin:"0 0 6px",fontSize:13,color:N.ts,lineHeight:1.5}}>{i+1}. {t}</p>
-                ))}
-              </div>
-              <div style={{border:`1px solid ${N.bd}`,borderRadius:8,padding:"18px 20px"}}>
-                <h3 style={{fontSize:15,fontWeight:600,color:N.tx,margin:"0 0 14px"}}>V1 vs Iteration Cost</h3>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                  {[{l:"V1 full build",v:"4–6 hrs"},{l:"V2+ iteration",v:"30–60 min"},{l:"V1 on Pro",v:"2–3 days"},{l:"V2+ on Pro",v:"1 session"}].map(s=>(
-                    <div key={s.l} style={{background:N.sbg,borderRadius:6,padding:"10px 14px"}}>
-                      <div style={{fontSize:11,color:N.ts,marginBottom:3}}>{s.l}</div>
-                      <div style={{fontSize:18,fontWeight:700,color:N.tx}}>{s.v}</div>
-                    </div>
-                  ))}
-                </div>
-                <p style={{margin:"12px 0 0",fontSize:12,color:N.ts}}>Iterations use the change brief — much less tokens than a full rebuild.</p>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

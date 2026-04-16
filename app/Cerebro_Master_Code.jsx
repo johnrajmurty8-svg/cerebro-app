@@ -124,7 +124,46 @@ const SPIRIT=[
 ];
 
 /* ═══ System prompt, generators ═══ */
-const SYS=`You are a senior product/technical lead. Generate 5 docs separated by "---DOC_SEPARATOR---". Each starts "# DOC_N: Title" (N=1-5). DOC1: PRD (14 sections, FR-001 IDs, acceptance criteria, MoSCoW). DOC2: App Flow (routes, actions, conditionals). DOC3: UI Guide/DESIGN.md (tokens, components, breakpoints). DOC4: Backend (data models, API endpoints, services). DOC5: Security (auth, encryption, OWASP, compliance). Flag gaps with [⚠️ ATTENTION NEEDED]. 800-2000 words each.`;
+const SYS=`You are a senior product/technical lead generating a complete build package from a product intake form. You must produce 13 output items total — 8 Markdown files and 5 Word document descriptions.
+
+## OUTPUT FORMAT
+
+Generate each document as a clearly separated section using this exact format:
+
+---FILE: [filename]---
+[full document content]
+---END FILE---
+
+The 13 items you must produce, in order:
+
+### Markdown Files (1–5: core technical docs)
+1. **prd.md** — Product Requirements Document. 14 sections: Document Control, Problem Statement, User Personas, Goals & Metrics, Functional Requirements (grouped by Epic with FR-001 IDs, acceptance criteria, MoSCoW priority), Non-Functional Requirements, Scope (in/out), Technical Architecture, Release Plan, Go/No-Go Criteria, Risks & Mitigations, Open Questions. 1000–2000 words.
+2. **app-flow.md** — App Flow & Navigation. Route map (every URL), authentication flow, onboarding flow, main app layout, screen-by-screen interaction flows (what loads, what user does, what happens), error & edge cases. 800–1500 words.
+3. **design.md** — UI Design Guide. Design tokens (colors with hex values, typography scale, spacing, radius, shadows), breakpoints with responsive behavior, component specifications (dimensions, states, styling), motion & animation specs, iconography. 800–1500 words.
+4. **backend-spec.md** — Backend Specification. Data models (every table with fields, types, constraints, relationships), API endpoints (route, method, description), services, environment variables list, folder structure. 1000–2000 words.
+5. **security-checklist.md** — Security Checklist. Authentication, authorization (RBAC, row-level security), encryption (transit, rest, secrets), input validation, OWASP Top 10 coverage table, integration security, API headers, compliance (GDPR, SOC2 as applicable), AI-specific security, incident response. 800–1500 words.
+
+### Word Documents (6–10: stakeholder versions — describe content as if writing a Word doc)
+6. **prd.docx** — Same content as prd.md formatted as a professional Word document with branded header, styled requirement tables, color-coded MoSCoW labels, and attention boxes for flagged items.
+7. **app-flow.docx** — Same content as app-flow.md formatted as a professional Word document with route table, numbered flow steps, and attention boxes.
+8. **design.docx** — Same content as design.md formatted as a professional Word document with token tables, component spec sections, and breakpoint matrix.
+9. **backend-spec.docx** — Same content as backend-spec.md formatted as a professional Word document with data model tables and endpoint tables.
+10. **security-checklist.docx** — Same content as security-checklist.md formatted as a professional Word document with OWASP coverage table and compliance checklists.
+
+### Operational Markdown Files (11–13: Claude Code session files)
+11. **CLAUDE.md** — Claude Code auto-read instructions. Include: product name + one-liner; stack section (from intake, or best recommendation if blank); Rules: read project-brief.md first, write plan.md before any code and wait for approval, follow design.md / backend-spec.md / security-checklist.md / app-flow.md, use TypeScript, write tests, keep components small, use env vars for all secrets; Workflow: Read docs → Plan → Approve → Build → Test → Report; Principles: simplicity, no shortcuts, minimal blast radius, ask when unsure. 200–400 words.
+12. **project-brief.md** — One-page project overview. Include: product name + one-liner; owner, launch date, team size (from intake); top 3–5 goals (from intake); build order: 1. Setup, 2. DB + Auth, 3. API, 4. UI Shell, 5. Features, 6. Polish, 7. Deploy; document map listing all 8 filenames. 300–500 words.
+13. **startup-prompts.md** — Ready-to-paste Claude Code session prompts. Include: Session 1 — Setup (~20 min): Read CLAUDE.md + all docs, create plan.md with phases, no code yet. Session 2 — Backend (~1–2 hr): Execute phases 1–3, follow backend-spec.md + security-checklist.md. Session 3 — Frontend (~1–2 hr): Execute phases 4–5, follow design.md + app-flow.md. Session 4 — Polish (~1 hr): Phases 6–7, errors, loading states, responsive, tests, deploy. Optional Stitch Session: Redesign in Stitch → export HTML or DESIGN.md → "Update [component] to match. Keep functionality." Each session block must be copy-paste ready — a self-contained prompt the user can drop into Claude Code without editing. 400–600 words.
+
+## RULES
+- Flag ambiguities or missing info with [⚠️ ATTENTION NEEDED] — never invent answers
+- Use the product name from the intake in all headers and titles
+- Every functional requirement needs a unique ID (FR-001, FR-002, etc.), a MoSCoW priority, and acceptance criteria
+- Data models must include field names, types, constraints (PK, FK, NOT NULL, UNIQUE), and relationships
+- Design tokens must include actual hex color values, not just descriptions
+- The .md files should be usable by Claude Code with no further editing
+
+Below is the complete project intake form. Generate all 13 items from this information.`;
 
 function genClaudeMd(a){return `# ${a.product_name||"Product"} — Claude Code Instructions\n\n## Overview\n${a.one_liner||"See project-brief.md"}\n\n## Stack\n${a.tech_stack||"Best modern stack"}\n\n## Rules\n- Read project-brief.md FIRST\n- plan.md before coding — wait for approval\n- Follow design.md, backend-spec.md, security-checklist.md, app-flow.md\n- TypeScript, tests, small components, env vars\n\n## Workflow\n1. Read doc → 2. Plan → 3. Approve → 4. Build → 5. Test → 6. Report\n\n## Principles\nSimplicity. No shortcuts. Minimal impact. Ask when unsure.`;}
 function genBrief(a){return `# ${a.product_name||"Product"} — Brief\n\n> ${a.one_liner||""}\n\nOwner: ${a.author||"TBD"} | Launch: ${a.target_date||"TBD"} | Team: ${a.team_size||"Solo+AI"}\n\n## Build Order\n1. Setup 2. DB+Auth 3. API 4. UI Shell 5. Features 6. Polish 7. Deploy\n\n## Docs\nprd.md, app-flow.md, design.md, backend-spec.md, security-checklist.md, CLAUDE.md`;}
@@ -210,14 +249,40 @@ export default function Cerebro(){
 
   const save=useCallback(async()=>{try{await window.storage.set("cerebro-v1",JSON.stringify({ans,sec,mode,versions,currentVer}));setFlash(true);setTimeout(()=>setFlash(false),1500);}catch{}},[ans,sec,mode,versions,currentVer]);
   const upd=(id,v)=>setAns(p=>({...p,[id]:v}));
-  const addF=(id,f)=>setFiles(p=>({...p,[id]:[...(p[id]||[]),...Array.from(f)]}));
+  const addF=(id,f)=>{const arr=Array.from(f);setFiles(p=>({...p,[id]:[...(p[id]||[]),...arr]}));};
   const rmF=(id,i)=>setFiles(p=>({...p,[id]:p[id].filter((_,j)=>j!==i)}));
   const secProg=i=>{const s=SECTIONS[i];if(!s)return 0;return Math.round(s.questions.filter(q=>(ans[q.id]||"").trim()).length/s.questions.length*100);};
   const totAns=SECTIONS.flatMap(s=>s.questions).filter(q=>(ans[q.id]||"").trim()).length;
   const totProg=TOTAL_Q?Math.round(totAns/TOTAL_Q*100):0;
   const reqMiss=SECTIONS.flatMap(s=>s.questions).filter(q=>q.required&&!(ans[q.id]||"").trim());
-  const buildIntake=()=>{let o="# PROJECT INTAKE\n\n";SECTIONS.forEach(s=>{o+=`## ${s.icon} ${s.title}\n\n`;s.questions.forEach(q=>{o+=`### ${q.label}\n${(ans[q.id]||"").trim()||"*[Not provided]*"}\n\n`;});});return o;};
+  const buildIntake=()=>{
+    let o="# PROJECT INTAKE\n\n";
+    SECTIONS.forEach(s=>{
+      o+=`## ${s.icon} ${s.title}\n\n`;
+      s.questions.forEach(q=>{
+        o+=`### ${q.label}\n${(ans[q.id]||"").trim()||"*[Not provided]*"}\n\n`;
+        const qFiles=files[q.id]||[];
+        if(qFiles.length>0){
+          o+=`*Attached files: ${qFiles.map(f=>f.name).join(", ")}*\n\n`;
+        }
+      });
+    });
+    const allFiledQs=SECTIONS.flatMap(s=>s.questions).filter(q=>(files[q.id]||[]).length>0);
+    if(allFiledQs.length>0){
+      o+=`## 📎 Reference Files Attached\n\n`;
+      allFiledQs.forEach(q=>{
+        o+=`**${q.label}**\n`;
+        (files[q.id]||[]).forEach(f=>{o+=`- ${f.name} (${f.type})\n`;});
+        o+="\n";
+      });
+      o+=`> Note: These files were attached in CEREBRO but not transmitted via clipboard. If you want me to analyze the actual content, attach them directly to this chat before sending.`;
+    }
+    return o;
+  };
   const cp=async(t,k)=>{try{await navigator.clipboard.writeText(t);}catch{const el=document.createElement("textarea");el.value=t;document.body.appendChild(el);el.select();document.execCommand("copy");document.body.removeChild(el);}setCopied(p=>({...p,[k]:true}));setTimeout(()=>setCopied(p=>({...p,[k]:false})),2000);};
+  const downloadMd=(key)=>{const content=key==="changeBrief"?changeBrief:docs?.[key];if(!content)return;const fileName=DT.find(d=>d.key===key)?.file||`${key}.md`;const blob=new Blob([content],{type:"text/markdown;charset=utf-8"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=fileName;a.click();URL.revokeObjectURL(url);};
+  const downloadDocx=async(key)=>{const content=key==="changeBrief"?changeBrief:docs?.[key];if(!content)return;const dtEntry=DT.find(d=>d.key===key);const fileName=dtEntry?.file?.replace(".md",".docx")||`${key}.docx`;const docTitle=dtEntry?.label?.replace(/^[^\w]+/,"").trim()||key;const productName=ans?.product_name||"CEREBRO Project";try{const{Document,Packer,Paragraph,TextRun,Table,TableRow,TableCell,HeadingLevel,AlignmentType,WidthType,ShadingType,BorderStyle}=await import("docx");const lines=content.split("\n");const bodyChildren=[];for(const line of lines){if(line.startsWith("### ")){bodyChildren.push(new Paragraph({heading:HeadingLevel.HEADING_3,children:[new TextRun({text:line.slice(4),bold:true,color:"4A90D9",size:24})]}))}else if(line.startsWith("## ")){bodyChildren.push(new Paragraph({heading:HeadingLevel.HEADING_2,children:[new TextRun({text:line.slice(3),bold:true,color:"60A5FA",size:28})]}))}else if(line.startsWith("# ")){bodyChildren.push(new Paragraph({heading:HeadingLevel.HEADING_1,children:[new TextRun({text:line.slice(2),bold:true,color:"93C5FD",size:32})]}))}else if(line.match(/^[-*]\s/)){bodyChildren.push(new Paragraph({bullet:{level:0},children:[new TextRun({text:line.slice(2),size:22,color:"CBD5E1"})]}))}else if(line.match(/^---+$/)){bodyChildren.push(new Paragraph({border:{bottom:{style:BorderStyle.SINGLE,size:6,color:"334155",space:1}},children:[new TextRun("")]}))}else if(!line.trim()){bodyChildren.push(new Paragraph({children:[new TextRun("")]}))}else{const parts=line.split(/(\*\*.*?\*\*)/g);const runs=parts.map(p=>p.startsWith("**")&&p.endsWith("**")?new TextRun({text:p.slice(2,-2),bold:true,size:22,color:"E2E8F0"}):new TextRun({text:p,size:22,color:"CBD5E1"}));bodyChildren.push(new Paragraph({children:runs}));}}const headerTable=new Table({width:{size:9360,type:WidthType.DXA},columnWidths:[9360],rows:[new TableRow({children:[new TableCell({width:{size:9360,type:WidthType.DXA},shading:{fill:"0F172A",type:ShadingType.CLEAR},margins:{top:200,bottom:200,left:300,right:300},borders:{top:{style:BorderStyle.NONE},bottom:{style:BorderStyle.SINGLE,size:6,color:"3B82F6"},left:{style:BorderStyle.NONE},right:{style:BorderStyle.NONE}},children:[new Paragraph({alignment:AlignmentType.LEFT,children:[new TextRun({text:"🧠 CEREBRO",bold:true,size:28,color:"3B82F6",font:"Arial"}),new TextRun({text:"  ·  Master Build Package Generator",size:20,color:"64748B",font:"Arial"})]}),new Paragraph({alignment:AlignmentType.LEFT,children:[new TextRun({text:productName,bold:true,size:24,color:"E2E8F0",font:"Arial"}),new TextRun({text:`  ·  ${docTitle}`,size:20,color:"94A3B8",font:"Arial"})]}),new Paragraph({alignment:AlignmentType.LEFT,children:[new TextRun({text:`Generated: ${new Date().toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"})}`,size:18,color:"475569",font:"Arial",italics:true})]})]})]})]);const doc=new Document({styles:{default:{document:{run:{font:"Arial",size:22,color:"CBD5E1"}}}},sections:[{properties:{page:{size:{width:12240,height:15840},margin:{top:1440,right:1440,bottom:1440,left:1440}}},children:[headerTable,new Paragraph({children:[new TextRun("")]}), ...bodyChildren]}]});const buffer=await Packer.toBuffer(doc);const blob=new Blob([buffer],{type:"application/vnd.openxmlformats-officedocument.wordprocessingml.document"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=fileName;a.click();URL.revokeObjectURL(url);}catch(err){console.error("docx generation failed:",err);alert("Could not generate .docx — downloading .md instead.");downloadMd(key);}};
+  const downloadAll=async()=>{if(!docs)return;const exportKeys=DT.filter(d=>d.key!=="changeBrief").map(d=>d.key);for(const key of exportKeys){await downloadMd(key);await new Promise(r=>setTimeout(r,150));}}
 
   // Save version snapshot
   const saveVersion = () => {
@@ -256,53 +321,53 @@ export default function Cerebro(){
   // Load test data
   const loadTestData = () => {
     const td = {
-      product_name: "FlowBoard",
-      one_liner: "A visual project management app for remote teams that turns conversations into task boards using AI",
-      author: "Alex Rivera, Product Manager",
-      stakeholders: "• Maya Chen — Engineering Lead (Approver)\n• Jordan Park — Design Lead (Contributor)\n• Sam Torres — CEO (Informed)\n• Priya Mehta — QA Lead (Consulted)",
-      target_date: "Q3 2026 — August 15 target",
+      product_name: "FamilyTable",
+      one_liner: "A family recipe book app where you upload photos, handwritten notes, and ingredient lists — and AI generates a beautiful, searchable full recipe to preserve for generations",
+      author: "Jamie Okafor, Product Designer & Home Cook",
+      stakeholders: "• Nadia Okafor — Engineering Lead (Approver)\n• Marcus Teo — Mobile Developer (Contributor)\n• Priya Okafor — Grandmother / Primary User (Informed)\n• Sam Chen — QA Lead (Consulted)",
+      target_date: "Q4 2026 — October 31 target",
       version: "0.1 (Draft)",
-      team_size: "1 PM (me), 1 designer, 2 engineers + Claude Code for acceleration. Using Figma for design, VS Code + Claude Code for dev.",
-      problem_statement: "Remote teams waste 6+ hours per week manually converting Slack/Teams conversations into actionable tasks. 73% of action items discussed in meetings are never tracked, leading to missed deadlines and duplicated work. Project managers spend more time updating boards than actually managing projects.",
-      who_affected: "Primary: Project managers and team leads at remote-first companies (10-50 employees). Secondary: Individual contributors who need clarity on what to work on next. Tertiary: Executives who need project visibility without attending every standup.",
-      current_solutions: "• Jira (45%) — powerful but over-complex, 30min+ daily maintenance\n• Trello (25%) — too simple for real projects, no AI\n• Asana (15%) — good but expensive, no conversation integration\n• Spreadsheets + Slack (15%) — chaos, nothing is tracked properly",
-      business_case: "Project management software market: $7.1B in 2026, growing 13% YoY. AI-native PM tools are the fastest-growing segment. No major player converts conversations to tasks automatically. Slack has 32M daily active users — massive distribution opportunity via integration.",
-      cost_of_inaction: "Competitors like Linear are adding AI features in Q4 2026. Monday.com acquired an AI startup last month. The window for an AI-native conversation-to-task tool is 6-12 months before incumbents catch up.",
-      primary_persona: "Name: Sarah the Team Lead\nRole: Engineering manager at a 30-person SaaS startup\nAge: 34\nGoals: Keep her 8-person team aligned without micromanaging. Wants to spend <15 min/day on project admin.\nFrustrations: Spends 45 min/day updating Jira. Tasks fall through cracks between Slack and the board. Standup notes disappear.\nTech proficiency: High — uses Slack, GitHub, Figma, Notion daily.",
-      secondary_personas: "Persona 2: Dev Dan — Senior developer who hates updating task statuses. Wants the board to update itself based on his Git commits and Slack messages.\n\nPersona 3: CEO Claire — Needs a 30-second weekly view of all projects. Doesn't want to learn a complex PM tool.",
-      user_journey: "1. Sarah's team finishes a Slack discussion about a new feature\n2. FlowBoard AI detects action items in the conversation\n3. Suggests task cards with assignees, priorities, and deadlines\n4. Sarah reviews and approves with one click\n5. Tasks appear on the team's visual board\n6. As devs work, status auto-updates from GitHub activity\n7. Sarah gets a daily digest instead of manual standups\n8. CEO Claire sees a real-time project health dashboard",
-      jobs_to_be_done: "• When my team discusses tasks in Slack, I want them auto-captured so nothing falls through the cracks\n• When I start my day, I want a clear view of what's blocked and what's on track so I can act immediately\n• When an engineer finishes a task, I want the board to update automatically so I don't chase status updates\n• When my CEO asks for a project update, I want to share a live dashboard so I don't spend 30 min preparing slides",
-      product_goals: "1. Reduce daily PM admin time from 45 min to under 10 min\n2. Capture 90%+ of discussed action items (vs 27% industry average)\n3. Achieve 70% weekly active usage within 2 months of launch\n4. Reach 500 paying teams within 6 months\n5. NPS > 50 by month 3",
-      kpis: "• PM admin time: baseline 45 min/day → target <10 min/day\n• Task capture rate: baseline ~27% → target 90%+\n• Weekly active teams: target 70% of signed-up teams\n• Time from conversation to task: target <30 seconds\n• Board accuracy (auto-status): target 85%+ correct",
-      leading_indicators: "Sign-up to first board creation rate, Slack integration completion rate, AI suggestion acceptance rate, daily active usage in first 2 weeks",
-      in_scope: "• AI conversation-to-task extraction (Slack integration)\n• Visual Kanban board with drag-and-drop\n• Auto-status updates from GitHub\n• Team dashboard with project health metrics\n• Daily digest emails\n• Slack bot for quick task creation\n• Web app (responsive)\n• Basic role permissions (admin, member, viewer)",
-      out_of_scope: "• Native mobile apps — Phase 2\n• Microsoft Teams integration — Phase 2\n• Time tracking — Phase 2\n• Gantt charts — Phase 3\n• Custom workflows/automations — Phase 3\n• On-premise deployment — not planned\n• Video call integration — not planned",
-      future_phases: "Phase 2 (Q4 2026): Native iOS/Android, Teams integration, time tracking, advanced filters\nPhase 3 (Q1 2027): Gantt charts, custom automations, API for third-party integrations\nPhase 4 (Q2 2027): AI project risk prediction, resource allocation suggestions",
-      core_features: "Epic 1: Conversation Intelligence\n- Connect Slack workspace\n- AI scans channels for action items\n- Suggests task cards (title, assignee, priority, deadline)\n- One-click approve/edit/dismiss\n\nEpic 2: Visual Board\n- Kanban columns (To Do, In Progress, Review, Done)\n- Drag-and-drop cards\n- Card detail view with comments, attachments, subtasks\n- Board filters and search\n\nEpic 3: Auto-Status\n- GitHub integration\n- Auto-move cards based on PR/commit activity\n- Manual override always available\n\nEpic 4: Dashboard & Digest\n- Team project health overview\n- Blocked items alert\n- Daily email digest\n- Weekly summary for executives",
-      user_stories: "• As a team lead, I want AI to extract tasks from Slack so I don't manually create tickets\n• As a developer, I want my task status to update when I push code so I don't update the board manually\n• As a PM, I want a daily digest so I know what needs attention without checking the board\n• As a CEO, I want a project health dashboard so I get visibility without attending standups",
-      priority_notes: "Conversation Intelligence + Visual Board = MUST HAVE (core value prop)\nAuto-Status from GitHub = SHOULD HAVE (strong differentiator)\nDashboard + Digest = SHOULD HAVE\nAdvanced permissions = COULD HAVE for MVP",
-      performance: "Page load <2s, AI task extraction <5s per conversation, board renders <1s with 500+ cards, support 1K concurrent users at launch, 99.9% uptime",
-      security: "OAuth 2.0 for authentication (Google + Slack SSO). AES-256 encryption at rest, TLS 1.3 in transit. SOC 2 Type I by month 6. GDPR-compliant for EU teams. Slack data processed but not permanently stored — only extracted tasks retained.",
-      accessibility: "WCAG 2.1 AA compliance. Full keyboard navigation for board. Screen reader support for task management. High contrast mode.",
-      platforms: "Web: Chrome, Firefox, Safari, Edge (latest 2 versions). Responsive design — usable on tablets. Min screen: 375px width. Progressive Web App for mobile access.",
-      tech_stack: "Frontend: Next.js 14 + Tailwind CSS + Framer Motion\nBackend: Node.js + tRPC (type-safe API)\nDatabase: Supabase (PostgreSQL + Realtime)\nAuth: Clerk (supports Slack SSO + Google)\nAI: Claude API (Haiku for extraction, Sonnet for complex tasks)\nRealtime: Supabase Realtime for board updates\nEmail: Resend for digests",
-      integrations: "• Slack — OAuth app, event subscriptions, bot\n• GitHub — webhooks for PR/commit events\n• Google OAuth — social login\n• Resend — transactional emails\n• Sentry — error tracking\n• PostHog — product analytics\n• Stripe — billing (Phase 1.5)",
-      data_model: "Users, Teams, TeamMembers, Projects, Boards, Columns, Tasks, TaskComments, SlackConnections, GitHubConnections, Conversations, AIExtractions, Digests.\n\nA Team has many Projects, each with one Board. Board has ordered Columns. Column has ordered Tasks. Task has assignee (User), comments, and linked Conversation.",
-      ai_instructions: "Use Claude Code for all backend logic, API routes, and AI integration. Use Google Stitch for initial UI exploration, then Claude Code to implement. All components must be atomic and typed (TypeScript). Write E2E tests for critical flows (Slack → extraction → task creation). Use Supabase row-level security for multi-tenancy.",
-      design_direction: "Modern, clean SaaS aesthetic inspired by Linear (speed + density) and Notion (flexibility). Dark mode primary — most dev/PM teams prefer it. Brand colors: Electric indigo (#6366F1) + Slate (#0F172A). Cards should feel lightweight and scannable. Board should feel fast — no loading spinners for drag-and-drop.",
-      key_screens: "1. Board View — Kanban columns with task cards, filters, search\n2. Inbox — AI-suggested tasks from Slack conversations, approve/edit/dismiss\n3. Task Detail — Full card with description, comments, subtasks, activity log\n4. Dashboard — Project health, blocked items, team velocity\n5. Settings — Team management, integrations, notifications\n6. Onboarding — Connect Slack + GitHub wizard",
-      navigation: "Left sidebar: Projects list + Board/Inbox/Dashboard toggle. Top bar: search, filters, notification bell, user menu. Command palette (Cmd+K) for quick navigation. Mobile: bottom tab bar (Board, Inbox, Dashboard).",
-      interactions: "Drag-and-drop task cards between columns. Inline editing for task titles. Command palette (Cmd+K) for everything. Keyboard shortcuts for power users. Smooth 60fps drag animations. Toast notifications for real-time updates. Skeleton loading states.",
-      phases: "Phase 0 — Discovery & Design (2 weeks): User interviews, wireframes, Slack API spike, Stitch prototypes\nPhase 1 — MVP Build (6 weeks): Core board + Slack integration + AI extraction\nPhase 2 — Beta (2 weeks): 30 teams, feedback loop, bug fixes\nPhase 3 — Public Launch (1 week): Marketing, onboarding polish, pricing go-live",
-      milestones: "• Design complete: May 1\n• Slack integration working: May 15\n• AI extraction pipeline: May 30\n• Board UI complete: June 15\n• GitHub integration: June 30\n• Beta launch: July 1\n• Public launch: August 15",
-      launch_criteria: "GO: All P0 bugs resolved, Slack integration verified with 5+ workspaces, AI extraction accuracy >85%, load test passed (500 concurrent), security audit complete.\nNO-GO: Any P0 open, Slack API approval pending, extraction accuracy <80%, no legal sign-off on data handling.",
-      known_risks: "1. Slack API rate limits may bottleneck extraction for large workspaces\n2. AI extraction accuracy may vary by conversation style\n3. GitHub webhook reliability outside our control\n4. Small team — key person dependency\n5. Slack app approval process may take 2-4 weeks\n6. Competitor launches during our build phase",
-      mitigations: "1. Implement queue-based processing with backoff\n2. Human-in-the-loop: always show suggestions, never auto-create without approval\n3. Build retry logic + manual sync fallback\n4. Document everything, use Claude Code to reduce bus factor\n5. Submit Slack app early in Phase 0\n6. Focus on speed-to-market, unique AI angle",
-      dependencies: "Slack app directory approval (2-4 weeks), GitHub OAuth app registration (1-2 days), Clerk account setup, Supabase project provisioning, Resend domain verification",
-      existing_research: "Conducted 15 user interviews with PMs at remote companies (March 2026). Key findings:\n• 93% say task capture from conversations is their #1 pain\n• 87% would pay $8-15/user/month for auto-capture\n• 67% currently use Slack + Jira combo and hate the context switching\n• Average PM spends 42 min/day on board maintenance\n• Top requested feature: 'just make the board update itself'",
-      competitors: "• Linear: Best UX but no conversation integration. $8/user/mo.\n• Jira: Market leader but over-complex. No AI. $7.75/user/mo.\n• Asana: Good for non-technical teams. Adding AI features. $10.99/user/mo.\n• Monday.com: Visual but bloated. Acquired AI startup. $9/user/mo.\n• Shortcut (fka Clubhouse): Developer-focused. No Slack-to-task AI.",
-      budget: "Infrastructure: $0-100/month (Supabase free tier, Vercel free tier, Claude API ~$50/mo for extraction). No design contractor — using Stitch + Figma ourselves. Must launch before September for YC W27 application.",
-      anything_else: "We're applying to YC Winter 2027 batch — the MVP needs to be live with real users and revenue traction by October 2026. The product should feel premium and fast from day one. Our thesis: the next generation of PM tools won't be boards you update — they'll be AI systems that observe your team and keep the board accurate automatically.",
+      team_size: "1 designer/PM (me), 1 mobile developer + Claude Code for acceleration. Using Figma for design, VS Code + Claude Code for dev.",
+      problem_statement: "Family recipes are stored on scraps of paper, in notebooks, and in people's heads. When grandparents pass away, these recipes are often lost forever. Digitising them is painful — scanning, transcribing, guessing at missing measurements, and reformatting all takes hours. There's no easy way to capture the real story behind a recipe along with the instructions.",
+      who_affected: "Primary: Home cooks (25–65) who want to preserve family food heritage. Secondary: Family members who want to browse and cook from a shared digital cookbook. Tertiary: Food bloggers and recipe creators who want a faster way to document their cooking.",
+      current_solutions: "• Handwritten recipe cards — authentic but fragile, easily lost\n• Notes apps (Apple Notes, Google Keep) — unstructured, hard to search\n• Recipe apps (Paprika, Yummly) — designed for web imports, not handwritten originals\n• Photo albums — images saved but not searchable or cookable\n• Word docs / spreadsheets — clunky, not mobile-friendly",
+      business_case: "The recipe app market is $300M+ and growing with AI. No current app solves the handwritten-card-to-digital-recipe pipeline with AI OCR and generation. 73M households in the US have a family recipe tradition worth preserving. The emotional value of family food heritage is a powerful retention driver that generic recipe apps can't replicate.",
+      cost_of_inaction: "Every year, family members pass away and take their recipes with them. The longer we wait, the more irreplaceable recipes are lost. Competitors are beginning to add AI photo features, but none have focused on the family preservation angle — this window is 12–18 months.",
+      primary_persona: "Name: Jamie the Keeper\nRole: Adult child / home cook trying to preserve family recipes\nAge: 38\nGoals: Digitise Grandma's 40+ handwritten recipe cards before she passes. Make them searchable and shareable with the whole family.\nFrustrations: Photos of recipe cards are unreadable on small screens. Transcribing by hand takes 20 min per recipe. Measurements are inconsistent ('a handful', 'cook until done').\nTech proficiency: Medium — comfortable with smartphone apps, uses iCloud Photos, not a developer.",
+      secondary_personas: "Persona 2: Priya the Grandmother — 72-year-old who cooks from memory and wants to leave her recipes as a legacy. Doesn't type but is willing to be photographed cooking and to voice-record notes.\n\nPersona 3: Kai the Teen Cook — 16-year-old who wants to learn family recipes but needs clear step-by-step instructions with photos, not handwritten shorthand.",
+      user_journey: "1. Grandma cooks her signature chicken curry from memory\n2. Jamie photographs the dish, the handwritten recipe card, and the raw ingredients\n3. Uploads all three photos into FamilyTable\n4. Adds a few voice or text notes: \"less chilli than the card says, Grandma always adjusts\"\n5. FamilyTable AI generates a full structured recipe: title, servings, ingredients with measurements, step-by-step instructions, tips, and a story intro\n6. Jamie reviews, edits a few lines, and saves\n7. Recipe is added to the family cookbook — browsable by family member, cuisine, occasion, or ingredient\n8. Family members can comment, rate, and add their own variations",
+      jobs_to_be_done: "• When I find a handwritten recipe card, I want to photograph it and get a clean digital version so I don't have to transcribe it manually\n• When I cook from memory, I want to record what I made quickly so I can repeat it later\n• When a family member passes, I want all their recipes safely stored and shareable so future generations can cook their dishes\n• When my kids ask how to make a dish, I want to send them a clear, tested recipe with photos so they can cook it themselves",
+      product_goals: "1. Allow upload of photos, notes, and ingredient lists — generate a full structured recipe in under 30 seconds\n2. Store and organise all recipes in a searchable family cookbook\n3. Support multi-user family sharing — every family member can contribute and browse\n4. Achieve 80% recipe generation accuracy without manual correction\n5. Reach 10,000 active family cookbooks within 6 months of launch",
+      kpis: "• Recipe generation time: under 30 seconds per recipe\n• Edit rate after generation: less than 20% of fields need manual correction\n• Weekly active family members per cookbook: 3+\n• Recipe retention rate: 90%+ of generated recipes saved (not discarded)\n• NPS: 60+ within 3 months",
+      leading_indicators: "Time to first generated recipe, photo upload completion rate, family invite acceptance rate, return visits within 7 days of first recipe saved",
+      in_scope: "• Photo upload (up to 3 images per recipe)\n• Text/voice note input\n• AI recipe generation (title, servings, ingredients, steps, tips, story intro)\n• Recipe card view\n• Family cookbook dashboard\n• Basic search by name or ingredient\n• Family invite link sharing",
+      out_of_scope: "• Video upload — V2\n• Grocery list generation — V2\n• Meal planning — V2\n• Public recipe sharing — V2\n• Print formatting — V2\n• Social features beyond family sharing — not planned for MVP\n• Nutritional analysis — not planned for MVP",
+      future_phases: "Phase 2 (Q1 2027): Video upload, grocery list generation, meal planning calendar\nPhase 3 (Q2 2027): Print-quality recipe books, public cookbook sharing, food blogger tools\nPhase 4 (Q3 2027): Nutritional analysis, dietary filter engine, recipe scaling AI",
+      core_features: "Epic 1: Recipe Capture\n- Upload up to 3 photos (dish, card, ingredients)\n- Add text or voice notes\n- AI generates full structured recipe on submit\n\nEpic 2: Recipe Card\n- Title, story intro, servings, prep/cook time\n- Ingredient list with quantities and units\n- Step-by-step instructions with tips\n- Photo gallery\n\nEpic 3: Family Cookbook\n- Dashboard showing all family recipes\n- Search by name, ingredient, cuisine, occasion\n- Filter by family member contributor\n\nEpic 4: Family Sharing\n- Invite family members via shareable link\n- Role-based access: Owner, Contributor, Viewer\n- Comment and rate recipes\n- Add personal variations",
+      user_stories: "• As a home cook, I want to photograph a handwritten recipe card and get a clean digital recipe so I don't have to type it out\n• As a family member, I want to browse all our saved recipes on my phone so I can cook them without asking anyone\n• As a cookbook owner, I want to invite my whole family so everyone can contribute and access our recipes\n• As a contributor, I want to add my own variation of a family recipe so my version is preserved alongside the original",
+      priority_notes: "Recipe Capture + AI Generation = MUST HAVE (core value prop)\nRecipe Card View = MUST HAVE\nFamily Cookbook Dashboard + Search = MUST HAVE\nFamily Sharing (invite link) = MUST HAVE\nComments + Variations = SHOULD HAVE\nVoice note input = COULD HAVE for MVP",
+      performance: "Photo upload <3s on 4G, AI recipe generation <30s, cookbook loads <1s with 200+ recipes, supports 50K concurrent users at launch, 99.9% uptime",
+      security: "Image uploads scanned for inappropriate content before storage; family invite links expire after 7 days; PII limited to name, email, and avatar; no public access to family cookbooks without invite; HTTPS enforced; API keys server-side only",
+      accessibility: "WCAG 2.1 AA compliance. Large text mode for older users. High contrast mode. Screen reader support for recipe browsing. Voice input for notes.",
+      platforms: "React Native — iOS and Android. Expo for local dev and builds. Min iOS: 15, Min Android: 10. Responsive design for tablet cooking mode.",
+      tech_stack: "React Native (iOS + Android), Node.js backend, PostgreSQL, AWS S3 for image storage, Claude API for recipe generation and OCR, Expo for local dev and builds",
+      integrations: "• Claude API — recipe generation, OCR on handwritten cards\n• AWS S3 — image storage\n• Firebase Cloud Messaging — family activity notifications\n• Apple Sign-In / Google Sign-In\n• Expo — local dev and OTA builds",
+      data_model: "User (id, name, email, avatar, family_id, role)\nFamily (id, name, cookbook_name, invite_code, created_at)\nRecipe (id, family_id, created_by, title, description, servings, prep_time, cook_time, cuisine, occasion, story, status, created_at, updated_at)\nIngredient (id, recipe_id, name, quantity, unit, notes)\nStep (id, recipe_id, order, instruction, tip)\nRecipeImage (id, recipe_id, type [dish/card/ingredients], s3_url, caption)\nComment (id, recipe_id, user_id, body, created_at)\nVariation (id, recipe_id, user_id, title, notes)",
+      ai_instructions: "Use Claude Code for all backend logic, API routes, and Claude API integration. Claude API handles two tasks: OCR on handwritten recipe card photos, and structured recipe generation from the combined photo analysis + user notes. All generation must return structured JSON that maps directly to the Recipe, Ingredient, and Step data models. Use Expo for mobile builds. Write integration tests for the photo → generation → save flow.",
+      design_direction: "Warm, tactile aesthetic — feels like a real cookbook, not a productivity app. Think aged paper textures, warm typography, photography-forward. Light mode primary (kitchen lighting). Brand colors: Warm terracotta (#C1440E) + Cream (#FDF6EC) + Deep olive (#3B4A2F). Recipe cards should feel like physical index cards. Large tap targets for older users.",
+      key_screens: "1. Onboarding / family cookbook setup\n2. Home dashboard (recent + featured recipes)\n3. Upload screen (photo + notes input)\n4. AI generation loading screen\n5. Recipe review + edit screen\n6. Recipe card view\n7. Cookbook browser (search, filter by cuisine/occasion/family member)\n8. Family member profiles\n9. Settings",
+      navigation: "Bottom tab bar: Home, Upload, Cookbook, Family, Profile. Upload is the primary CTA — prominent centre tab. Recipe card has full-screen immersive view. Cookbook browser has filter chips at top.",
+      interactions: "Tap to upload photos from camera or library. Long-press recipe card to share or edit. Swipe recipe card to add to favourites. Pull to refresh cookbook. Tap ingredient to check it off while cooking. Voice note recording via hold-to-record button.",
+      phases: "Phase 0 — Discovery & Design (2 weeks): User interviews with home cooks, Figma wireframes, Claude API OCR spike\nPhase 1 — MVP Build (8 weeks): Photo upload + AI generation + recipe card + basic cookbook\nPhase 2 — Family Features (3 weeks): Invite links, comments, variations, family dashboard\nPhase 3 — Beta (2 weeks): 50 families, feedback loop, accuracy tuning\nPhase 4 — Launch (1 week): App store submission, marketing, onboarding polish",
+      milestones: "• Design complete: July 1\n• Claude API OCR + generation pipeline working: July 15\n• Recipe card view complete: August 1\n• Family sharing live: August 20\n• Beta with 50 families: September 1\n• App store submission: October 15\n• Public launch: October 31",
+      launch_criteria: "GO: All P0 bugs resolved, AI generation accuracy >80% on test set of 50 recipe cards, photo upload working on iOS + Android, family invite flow verified end-to-end, App Store + Play Store approval received.\nNO-GO: Generation accuracy <75%, any P0 open, image storage not production-ready, no legal sign-off on data handling.",
+      known_risks: "1. AI generation quality varies with photo quality — mitigation: clear upload guidelines and image quality warnings\n2. Handwritten recipe OCR accuracy on old/faded cards — mitigation: allow manual text correction as fallback\n3. Family sharing complexity — mitigation: start with invite-link simplicity, no complex role management in MVP\n4. App Store review time — mitigation: submit early, use Expo OTA for post-launch fixes\n5. Scope creep from emotional use case — mitigation: strictly enforce MVP scope, defer V2 features",
+      mitigations: "1. Image quality check before upload — warn user if photo is too dark or blurry\n2. Manual edit mode always available on every generated field\n3. Simple invite link (no email required) — lowest friction for non-technical family members\n4. Submit to App Store 2 weeks before target launch date\n5. Maintain a strict V2 backlog — any new idea goes there, not into the MVP sprint",
+      dependencies: "AWS S3 bucket provisioning, Claude API access (OCR + generation), Expo build pipeline setup, Apple Developer + Google Play account registration, Firebase project for push notifications",
+      existing_research: "Conducted 12 user interviews with home cooks and adult children of elderly parents (March 2026). Key findings:\n• 89% have at least one family recipe they're worried about losing\n• 76% have tried photographing recipe cards but found the photos hard to use when actually cooking\n• 68% would share a recipe app with their family if setup took under 5 minutes\n• Average time to manually transcribe a handwritten recipe: 18 minutes\n• Top emotional driver: 'I want my kids to be able to make this after I'm gone'",
+      competitors: "• Paprika: Popular recipe manager but import-focused (web URLs), no handwriting OCR, no family sharing. $4.99 one-time.\n• Yummly: Discovery-focused, not preservation-focused. No handwritten import.\n• Recipe Keeper: Basic digitisation but no AI generation. No family sharing.\n• Google Photos: Stores images but no recipe structure or cooking interface.\n• Notion / Notion AI: Power users use this but too complex for non-technical family members.",
+      budget: "Infrastructure: ~$50-150/month (AWS S3, PostgreSQL on Railway, Claude API ~$80/mo for generation). No design contractor — using Figma ourselves. Expo free tier for builds. Target: profitable at 500 active family cookbooks on a $4.99/month subscription.",
+      anything_else: "The emotional hook is the product's biggest asset and biggest responsibility. We're not just building a utility — we're helping families preserve irreplaceable memories. Every UX decision should reinforce that this is something precious worth keeping. Open questions: Should we support voice memo input at launch or defer to V2? How do we handle recipes that exist in multiple family variations? Should generation be triggered automatically on upload or only on explicit user action?",
     };
     setAns(td);
     setSec(0);
@@ -341,14 +406,20 @@ export default function Cerebro(){
     setGenerating(true);setGenErr("");setGenProg("Preparing...");setTab("results");
     const intake=buildIntake(),cMd=genClaudeMd(ans),pB=genBrief(ans),pr=genPrompts(ans);
     try{
-      setGenProg("Claude is writing 5 documents...");
+      setGenProg("Claude is writing 8 documents...");
       const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:16000,system:SYS,messages:[{role:"user",content:intake}]})});
       if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e?.error?.message||`API ${r.status}`);}
       const data=await r.json();const full=data.content.filter(i=>i.type==="text").map(i=>i.text).join("\n");
-      const parts=full.split("---DOC_SEPARATOR---").map(p=>p.trim()).filter(Boolean);
-      const dm={prd:"",appFlow:"",design:"",backend:"",security:""};const ks=["prd","appFlow","design","backend","security"];
-      if(parts.length>=5)ks.forEach((k,i)=>{dm[k]=parts[i];});else{dm.prd=full;ks.slice(1).forEach(k=>{dm[k]="[⚠️] Use Copy to Clipboard.";});}
-      setDocs({...dm,claudeMd:cMd,projectBrief:pB,prompts:pr,changeBrief:changeBrief||"No previous version to compare."});setGenProg("");
+      // Parse ---FILE: [filename]--- / ---END FILE--- format
+      const fileRegex=/---FILE:\s*(.+?)---\s*\n([\s\S]*?)---END FILE---/g;
+      const fileMap={"prd.md":"prd","app-flow.md":"appFlow","design.md":"design","backend-spec.md":"backend","security-checklist.md":"security","CLAUDE.md":"claudeMd","project-brief.md":"projectBrief","startup-prompts.md":"prompts"};
+      const dm={prd:"",appFlow:"",design:"",backend:"",security:"",claudeMd:"",projectBrief:"",prompts:""};
+      let fm;while((fm=fileRegex.exec(full))!==null){const fname=fm[1].trim();const key=fileMap[fname];if(key&&fname.endsWith(".md"))dm[key]=fm[2].trim();}
+      // Fallback: old ---DOC_SEPARATOR--- format for 5 core docs
+      if(!dm.prd){const parts=full.split("---DOC_SEPARATOR---").map(p=>p.trim()).filter(Boolean);const ks=["prd","appFlow","design","backend","security"];if(parts.length>=5)ks.forEach((k,i)=>{dm[k]=parts[i];});else{dm.prd=full;ks.slice(1).forEach(k=>{dm[k]="[⚠️] Use Copy to Clipboard.";});}}
+      // Fallback: local generators for 3 operational docs if Claude didn't return them
+      if(!dm.claudeMd)dm.claudeMd=cMd;if(!dm.projectBrief)dm.projectBrief=pB;if(!dm.prompts)dm.prompts=pr;
+      setDocs({...dm,changeBrief:changeBrief||"No previous version to compare."});setGenProg("");
     }catch(e){setGenErr(e.message);setDocs({prd:"",appFlow:"",design:"",backend:"",security:"",claudeMd:cMd,projectBrief:pB,prompts:pr,changeBrief:changeBrief||"",_failed:true});setGenProg("");}
     finally{setGenerating(false);}
   };
@@ -408,7 +479,7 @@ export default function Cerebro(){
           </button>
         </div>
         <div style={{textAlign:"center",marginTop:16}}>
-          <button onClick={()=>{setMode("avatar");setTimeout(loadTestData,100);}} style={{padding:"6px 16px",borderRadius:8,border:"1px dashed #f59e0b44",background:"transparent",color:"#f59e0b",cursor:"pointer",fontSize:12}}>🧪 Load test project (FlowBoard) to try it out</button>
+          <button onClick={()=>{setMode("avatar");setTimeout(loadTestData,100);}} style={{padding:"6px 16px",borderRadius:8,border:"1px dashed #f59e0b44",background:"transparent",color:"#f59e0b",cursor:"pointer",fontSize:12}}>🧪 Load test project (FamilyTable) to try it out</button>
         </div>
       </div>
     </div>
@@ -427,7 +498,7 @@ export default function Cerebro(){
           {TABS.map(t=><button key={t} onClick={()=>setTab(t)} disabled={!["intake","versions","usage"].includes(t)&&!docs&&!generating}
             style={{padding:"4px 8px",borderRadius:4,border:"none",fontSize:11,fontWeight:tab===t?600:400,background:tab===t?"#334155":"transparent",color:tab===t?"#e2e8f0":(!["intake","versions","usage"].includes(t)&&!docs&&!generating)?"#334155":"#94a3b8",cursor:(!["intake","versions","usage"].includes(t)&&!docs&&!generating)?"default":"pointer"}}>{TL[t]}</button>)}
         </div>
-        <button onClick={loadTestData} style={{padding:"3px 7px",borderRadius:4,border:"1px solid #334155",background:"#1e293b",color:"#f59e0b",cursor:"pointer",fontSize:10,fontWeight:500}} title="Fill form with sample FlowBoard project">🧪 Test</button>
+        <button onClick={loadTestData} style={{padding:"3px 7px",borderRadius:4,border:"1px solid #334155",background:"#1e293b",color:"#f59e0b",cursor:"pointer",fontSize:10,fontWeight:500}} title="Fill form with sample FamilyTable project">🧪 Test</button>
         <button onClick={handleReset} style={{padding:"3px 7px",borderRadius:4,border:"1px solid #334155",background:"transparent",color:"#ef4444",cursor:"pointer",fontSize:10,opacity:.7}}>Reset</button>
       </header>
 
@@ -486,11 +557,21 @@ export default function Cerebro(){
         :!docs?<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center"}}><p style={{color:"#64748b",fontSize:13}}>Generate from Intake first.</p></div>
         :<>
           {genErr&&<div style={{margin:"8px 14px 0",padding:"7px 10px",background:"#7f1d1d33",border:"1px solid #991b1b",borderRadius:6,color:"#fca5a5",fontSize:11}}>{genErr}</div>}
-          <div style={{display:"flex",gap:1,padding:"7px 14px",borderBottom:"1px solid #334155",overflowX:"auto",flexShrink:0}}>{DT.filter(d=>d.key!=="changeBrief"||changeBrief).map(d=><button key={d.key} onClick={()=>setActiveDoc(d.key)} style={{padding:"3px 7px",borderRadius:3,border:"none",fontSize:10,fontWeight:activeDoc===d.key?600:400,whiteSpace:"nowrap",background:activeDoc===d.key?"#334155":"transparent",color:activeDoc===d.key?"#e2e8f0":d.key==="changeBrief"?"#f59e0b":"#94a3b8",cursor:"pointer"}}>{d.label}</button>)}</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 14px",borderBottom:"1px solid #334155",flexShrink:0,flexWrap:"wrap",gap:4}}>
+            <div style={{display:"flex",gap:1,overflowX:"auto"}}>{DT.filter(d=>d.key!=="changeBrief"||changeBrief).map(d=><button key={d.key} onClick={()=>setActiveDoc(d.key)} style={{padding:"3px 7px",borderRadius:3,border:"none",fontSize:10,fontWeight:activeDoc===d.key?600:400,whiteSpace:"nowrap",background:activeDoc===d.key?"#334155":"transparent",color:activeDoc===d.key?"#e2e8f0":d.key==="changeBrief"?"#f59e0b":"#94a3b8",cursor:"pointer"}}>{d.label}</button>)}</div>
+            <button onClick={downloadAll} style={{padding:"3px 12px",borderRadius:4,border:"1px solid #22c55e44",background:"#22c55e11",color:"#4ade80",cursor:"pointer",fontSize:10,fontWeight:600,whiteSpace:"nowrap",flexShrink:0}}>⬇ Download All (.md)</button>
+          </div>
           <div style={{flex:1,overflowY:"auto",padding:"12px 14px 32px"}}><div style={{maxWidth:760,margin:"0 auto"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-              <div><h3 style={{fontSize:15,fontWeight:700,margin:0}}>{DT.find(d=>d.key===activeDoc)?.label}</h3><span style={{fontSize:10,color:"#64748b"}}>{DT.find(d=>d.key===activeDoc)?.file}</span></div>
-              <button onClick={()=>cp(docs[activeDoc]||changeBrief||"",activeDoc)} style={{padding:"3px 10px",borderRadius:3,border:"1px solid #334155",background:copied[activeDoc]?"#22c55e22":"#1e293b",color:copied[activeDoc]?"#22c55e":"#94a3b8",cursor:"pointer",fontSize:10}}>{copied[activeDoc]?"✓":"📋"}</button>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:6}}>
+              <div>
+                <h3 style={{fontSize:15,fontWeight:700,margin:0}}>{DT.find(d=>d.key===activeDoc)?.label}</h3>
+                <span style={{fontSize:10,color:"#64748b"}}>{DT.find(d=>d.key===activeDoc)?.file}</span>
+              </div>
+              <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                <button onClick={()=>cp(docs[activeDoc]||changeBrief||"",activeDoc)} style={{padding:"3px 10px",borderRadius:3,border:"1px solid #334155",background:copied[activeDoc]?"#22c55e22":"#1e293b",color:copied[activeDoc]?"#22c55e":"#94a3b8",cursor:"pointer",fontSize:10}}>{copied[activeDoc]?"✓":"📋 Copy"}</button>
+                <button onClick={()=>downloadMd(activeDoc)} style={{padding:"3px 10px",borderRadius:3,border:"1px solid #334155",background:"#1e293b",color:"#60a5fa",cursor:"pointer",fontSize:10}}>⬇ .md</button>
+                <button onClick={()=>downloadDocx(activeDoc)} style={{padding:"3px 10px",borderRadius:3,border:"1px solid #3b82f644",background:"#3b82f611",color:"#93c5fd",cursor:"pointer",fontSize:10,fontWeight:600}}>⬇ .docx</button>
+              </div>
             </div>
             <div style={{background:"#1e293b",border:"1px solid #334155",borderRadius:8,padding:"16px 20px"}}>{renderMd(activeDoc==="changeBrief"?changeBrief:docs[activeDoc])}</div>
           </div></div>
