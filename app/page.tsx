@@ -184,6 +184,26 @@ Below is the complete project intake form. Generate all 10 files from this infor
 function genClaudeMd(a: Record<string,string>){return `# ${a.product_name||"Product"} — Claude Code Instructions\n\n## Overview\n${a.one_liner||"See project-brief.md"}\n\n## Stack\n${a.tech_stack||"Best modern stack"}\n\n## Rules\n- Read project-brief.md FIRST\n- plan.md before coding — wait for approval\n- Follow design.md, backend-spec.md, security-checklist.md, app-flow.md\n- TypeScript, tests, small components, env vars\n\n## Workflow\n1. Read doc → 2. Plan → 3. Approve → 4. Build → 5. Test → 6. Report\n\n## Principles\nSimplicity. No shortcuts. Minimal impact. Ask when unsure.`;}
 function genBrief(a: Record<string,string>){return `# ${a.product_name||"Product"} — Brief\n\n> ${a.one_liner||""}\n\nOwner: ${a.author||"TBD"} | Launch: ${a.target_date||"TBD"} | Team: ${a.team_size||"Solo+AI"}\n\n## Build Order\n1. Setup 2. DB+Auth 3. API 4. UI Shell 5. Features 6. Polish 7. Deploy\n\n## Docs\nprd.md, app-flow.md, design.md, backend-spec.md, security-checklist.md, CLAUDE.md`;}
 
+const CEREBRO_PAYLOAD_VERSION="1.0";
+
+function parseP1Payload(text: string){
+  const start=text.indexOf("---CEREBRO-PAYLOAD---");
+  const end=text.indexOf("---END-PAYLOAD---");
+  if(start===-1||end===-1)return{error:"no_delimiter"};
+  const jsonStr=text.slice(start+21,end).trim();
+  try{
+    const obj=JSON.parse(jsonStr) as Record<string,string>;
+    const fields: Record<string,string>={};let count=0;
+    Object.entries(obj).forEach(([k,v])=>{
+      if(k==="payload_version"||k==="mode")return;
+      if(v&&String(v).trim()){fields[k]=String(v).trim();count++;}
+    });
+    return{fields,mode:(obj.mode||null) as string|null,count};
+  }catch{
+    return{error:"invalid_json"};
+  }
+}
+
 /* ═══ Helpers ═══ */
 function FileChip({file,onRemove}: {file: File, onRemove: ()=>void}){return <span style={{display:"inline-flex",alignItems:"center",gap:4,background:"#f7f6f3",border:"1px solid #e3e2e0",borderRadius:6,padding:"3px 8px",fontSize:11,maxWidth:160}}><span style={{fontSize:12}}>📁</span><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,color:"#787774"}}>{file.name}</span><button onClick={onRemove} style={{background:"none",border:"none",color:"#9b9b9b",cursor:"pointer",fontSize:13,padding:0}}>×</button></span>;}
 
@@ -241,6 +261,10 @@ export default function Cerebro(){
   const [activeDoc,setActiveDoc]=useState("prd");
   const [files,setFiles]=useState<Record<string,File[]>>({});
   const [showModeConfirm,setShowModeConfirm]=useState(false);
+  const [showP1Modal,setShowP1Modal]=useState(false);
+  const [p1Text,setP1Text]=useState("");
+  const [p1Error,setP1Error]=useState("");
+  const [toast,setToast]=useState("");
   const [pasteContent,setPasteContent]=useState<Record<string,string>>({});
   const [showPaste,setShowPaste]=useState<Record<string,boolean>>({});
   const [zipLoading,setZipLoading]=useState<Record<string,boolean>>({});
@@ -918,6 +942,9 @@ export default function Cerebro(){
             )}
           </div>
 
+          {tab==="intake"&&<button onClick={()=>{setShowP1Modal(true);setP1Text("");setP1Error("");}}
+            style={{padding:"3px 10px",borderRadius:5,border:`1px solid ${N.bd}`,background:"none",color:N.ts,cursor:"pointer",fontSize:12,flexShrink:0,whiteSpace:"nowrap"}}
+            onMouseEnter={e=>e.currentTarget.style.borderColor=accent} onMouseLeave={e=>e.currentTarget.style.borderColor=N.bd}>📋 Load P1 Brief</button>}
           <button onClick={handleReset} style={{padding:"3px 10px",borderRadius:5,border:`1px solid ${N.bd}`,background:"none",color:N.ts,cursor:"pointer",fontSize:12,flexShrink:0}}
             onMouseEnter={e=>e.currentTarget.style.color=CL.red} onMouseLeave={e=>e.currentTarget.style.color=N.ts}>Reset</button>
         </header>
@@ -1303,6 +1330,35 @@ export default function Cerebro(){
         })()}
 
       </div>
+
+      {/* ═══ P1 PAYLOAD MODAL ═══ */}
+      {showP1Modal&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}} onClick={e=>{if(e.target===e.currentTarget)setShowP1Modal(false);}}>
+        <div style={{background:N.bg,border:`1px solid ${N.bd}`,borderRadius:12,padding:24,width:"100%",maxWidth:520,margin:"0 20px",boxShadow:"0 8px 32px rgba(0,0,0,0.12)"}}>
+          <h2 style={{fontSize:17,fontWeight:600,margin:"0 0 6px",color:N.tx}}>Load P1 Brief</h2>
+          <p style={{fontSize:13,color:N.ts,margin:"0 0 14px",lineHeight:1.5}}>Paste the payload block from your Build OS P1 session. CEREBRO will pre-fill your intake form — you can edit anything after.</p>
+          <textarea value={p1Text} onChange={e=>setP1Text(e.target.value)} placeholder={"Paste your ---CEREBRO-PAYLOAD--- block here"} rows={10} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:`1px solid ${N.bd}`,background:N.bg,color:N.tx,fontSize:12,fontFamily:"monospace",resize:"vertical",outline:"none",boxSizing:"border-box",lineHeight:1.5}}/>
+          {p1Error&&<p style={{color:CL.red,fontSize:12,margin:"6px 0 0"}}>{p1Error}</p>}
+          <div style={{display:"flex",gap:8,marginTop:14,justifyContent:"flex-end"}}>
+            <button onClick={()=>setShowP1Modal(false)} style={{padding:"6px 16px",borderRadius:6,border:`1px solid ${N.bd}`,background:"none",color:N.ts,cursor:"pointer",fontSize:13}}>Cancel</button>
+            <button onClick={()=>{
+              const result=parseP1Payload(p1Text);
+              if("error" in result&&result.error==="no_delimiter"){setP1Error("Payload not detected. Copy the full block including the --- markers.");return;}
+              if("error" in result&&result.error==="invalid_json"){setP1Error("Payload format is invalid. Copy the block exactly as generated.");return;}
+              if("fields" in result){
+                if(result.mode==="avatar"||result.mode==="spirit")switchMode(result.mode);
+                updateActiveProject({currentAnswers:{...ans,...result.fields}});
+                setShowP1Modal(false);
+                setToast(`✓ ${result.count} fields pre-filled from your P1 brief. Review and edit anything.`);
+                setTimeout(()=>setToast(""),3500);
+              }
+            }} style={{padding:"6px 16px",borderRadius:6,border:"none",background:accent,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:500}}>Load</button>
+          </div>
+        </div>
+      </div>}
+
+      {/* ═══ TOAST ═══ */}
+      {toast&&<div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:N.bg,border:`1px solid ${N.bd}`,borderRadius:8,padding:"10px 18px",color:CL.green,fontSize:13,fontWeight:500,zIndex:1100,whiteSpace:"nowrap",boxShadow:"0 4px 20px rgba(0,0,0,0.12)",pointerEvents:"none"}}>{toast}</div>}
+
     </div>
   );
 }

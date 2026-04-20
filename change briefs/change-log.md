@@ -2,6 +2,40 @@
 
 ---
 
+## V6 — April 19, 2026
+**Change:** P1 Payload Loader
+**Brief:** `change-brief-v6.md`
+
+### What Changed
+- Added "📋 Load P1 Brief" button to the intake form header — opens a modal for pasting a structured payload block
+- Added `parseP1Payload()` function — detects `---CEREBRO-PAYLOAD---` delimiters, parses JSON body, maps keys to CEREBRO question IDs
+- On successful load: merges payload values into `answers` state, optionally switches intake mode, shows toast with field count
+- Error handling in modal: distinct messages for missing delimiters and malformed JSON
+- Defined `CEREBRO_PAYLOAD_VERSION = "1.0"` constant and 23-key payload schema
+- Payload keys map directly to existing AVATAR and SPIRIT question IDs — no question arrays modified
+
+### What Didn't Change
+- AVATAR and SPIRIT question arrays — no changes to questions, IDs, labels, types, or required flags
+- `buildIntake()` function — unchanged
+- `SYS` system prompt — unchanged
+- 8-document generation pipeline
+- Copy Prompt and Generate via API buttons
+- Docs tab, Workflow tab
+- Multi-project workspace (dashboard, cards, switcher, archive/delete)
+- FamilyTable test data auto-fill (🧪 Test button)
+- `localStorage` schema (`cerebro-projects`)
+- `app/api/generate/route.ts`
+- Single-file JSX architecture
+
+### Affected Documents
+- PRD: Minor — document the P1 Payload Loader as a new intake convenience feature
+- App Flow: Minor — new modal added to intake screen flow
+- UI Guide: No
+- Backend Spec: No
+- Security Checklist: No
+
+---
+
 ## V5 — April 16, 2026
 **Change:** Reference Files Metadata in Intake Output
 **Brief:** `change-brief-v5.md`
@@ -111,7 +145,7 @@
 - Test data auto-fill (FlowBoard)
 - Generate/Copy Prompt button — kept, version-snapshot side effects removed
 - localStorage project data structure — existing projects not affected
-- API proxy (`app/api/generate/route.ts`)
+- API proxy (app/api/generate/route.ts)
 - Single-file JSX architecture
 
 ### Affected Documents

@@ -123,6 +123,8 @@ const SPIRIT=[
   ]},
 ];
 
+const CEREBRO_PAYLOAD_VERSION="1.0";
+
 /* ═══ System prompt, generators ═══ */
 const SYS=`You are a senior product/technical lead generating a complete build package from a product intake form. You must produce 13 output items total — 8 Markdown files and 5 Word document descriptions.
 
@@ -210,6 +212,24 @@ function generateChangeBrief(diff, oldVer, newVer, productName) {
   return b;
 }
 
+function parseP1Payload(text){
+  const start=text.indexOf("---CEREBRO-PAYLOAD---");
+  const end=text.indexOf("---END-PAYLOAD---");
+  if(start===-1||end===-1)return{error:"no_delimiter"};
+  const jsonStr=text.slice(start+21,end).trim();
+  try{
+    const obj=JSON.parse(jsonStr);
+    const fields={};let count=0;
+    Object.entries(obj).forEach(([k,v])=>{
+      if(k==="payload_version"||k==="mode")return;
+      if(v&&String(v).trim()){fields[k]=String(v).trim();count++;}
+    });
+    return{fields,mode:obj.mode||null,count};
+  }catch{
+    return{error:"invalid_json"};
+  }
+}
+
 /* ═══ Helpers ═══ */
 function FileChip({file,onRemove}){return <span style={{display:"inline-flex",alignItems:"center",gap:4,background:"#1e293b",border:"1px solid #334155",borderRadius:6,padding:"3px 8px",fontSize:11,maxWidth:160}}><span style={{fontSize:12}}>📁</span><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,color:"#94a3b8"}}>{file.name}</span><button onClick={onRemove} style={{background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:13,padding:0}}>×</button></span>;}
 
@@ -232,6 +252,10 @@ export default function Cerebro(){
   const [docs,setDocs]=useState(null);
   const [copied,setCopied]=useState({});
   const [activeDoc,setActiveDoc]=useState("prd");
+  const [showP1Modal,setShowP1Modal]=useState(false);
+  const [p1Text,setP1Text]=useState("");
+  const [p1Error,setP1Error]=useState("");
+  const [toast,setToast]=useState("");
   // Versioning
   const [versions,setVersions]=useState([]); // [{ver:1, date:"...", ans:{...}, mode:"avatar"}]
   const [currentVer,setCurrentVer]=useState(0);
@@ -498,6 +522,7 @@ export default function Cerebro(){
           {TABS.map(t=><button key={t} onClick={()=>setTab(t)} disabled={!["intake","versions","usage"].includes(t)&&!docs&&!generating}
             style={{padding:"4px 8px",borderRadius:4,border:"none",fontSize:11,fontWeight:tab===t?600:400,background:tab===t?"#334155":"transparent",color:tab===t?"#e2e8f0":(!["intake","versions","usage"].includes(t)&&!docs&&!generating)?"#334155":"#94a3b8",cursor:(!["intake","versions","usage"].includes(t)&&!docs&&!generating)?"default":"pointer"}}>{TL[t]}</button>)}
         </div>
+        {tab==="intake"&&<button onClick={()=>{setShowP1Modal(true);setP1Text("");setP1Error("");}} style={{padding:"3px 9px",borderRadius:4,border:"1px solid #475569",background:"transparent",color:"#94a3b8",cursor:"pointer",fontSize:10,fontWeight:500,whiteSpace:"nowrap"}}>📋 Load P1 Brief</button>}
         <button onClick={loadTestData} style={{padding:"3px 7px",borderRadius:4,border:"1px solid #334155",background:"#1e293b",color:"#f59e0b",cursor:"pointer",fontSize:10,fontWeight:500}} title="Fill form with sample FamilyTable project">🧪 Test</button>
         <button onClick={handleReset} style={{padding:"3px 7px",borderRadius:4,border:"1px solid #334155",background:"transparent",color:"#ef4444",cursor:"pointer",fontSize:10,opacity:.7}}>Reset</button>
       </header>
@@ -635,6 +660,32 @@ export default function Cerebro(){
           </div>
         )}
       </div></div>}
+
+      {/* ═══ P1 PAYLOAD MODAL ═══ */}
+      {showP1Modal&&<div style={{position:"fixed",inset:0,background:"#00000099",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}} onClick={e=>{if(e.target===e.currentTarget)setShowP1Modal(false);}}>
+        <div style={{background:"#1e293b",border:"1px solid #334155",borderRadius:12,padding:24,width:"100%",maxWidth:520,margin:"0 20px"}}>
+          <h2 style={{fontSize:17,fontWeight:700,margin:"0 0 6px",color:"#e2e8f0"}}>Load P1 Brief</h2>
+          <p style={{fontSize:12,color:"#94a3b8",margin:"0 0 14px",lineHeight:1.5}}>Paste the payload block from your Build OS P1 session. CEREBRO will pre-fill your intake form — you can edit anything after.</p>
+          <textarea value={p1Text} onChange={e=>setP1Text(e.target.value)} placeholder="Paste your ---CEREBRO-PAYLOAD--- block here" rows={10} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#e2e8f0",fontSize:12,fontFamily:"monospace",resize:"vertical",outline:"none",boxSizing:"border-box",lineHeight:1.5}}/>
+          {p1Error&&<p style={{color:"#f87171",fontSize:11,margin:"6px 0 0"}}>{p1Error}</p>}
+          <div style={{display:"flex",gap:8,marginTop:14,justifyContent:"flex-end"}}>
+            <button onClick={()=>setShowP1Modal(false)} style={{padding:"6px 16px",borderRadius:6,border:"1px solid #334155",background:"transparent",color:"#94a3b8",cursor:"pointer",fontSize:12}}>Cancel</button>
+            <button onClick={()=>{
+              const result=parseP1Payload(p1Text);
+              if(result.error==="no_delimiter"){setP1Error("Payload not detected. Copy the full block including the --- markers.");return;}
+              if(result.error==="invalid_json"){setP1Error("Payload format is invalid. Copy the block exactly as generated.");return;}
+              if(result.mode==="avatar"||result.mode==="spirit")setMode(result.mode);
+              setAns(prev=>({...prev,...result.fields}));
+              setShowP1Modal(false);
+              setToast(`✓ ${result.count} fields pre-filled from your P1 brief. Review and edit anything.`);
+              setTimeout(()=>setToast(""),3500);
+            }} style={{padding:"6px 16px",borderRadius:6,border:"none",background:"linear-gradient(135deg,#3b82f6,#2563eb)",color:"#fff",cursor:"pointer",fontSize:12,fontWeight:600}}>Load</button>
+          </div>
+        </div>
+      </div>}
+
+      {/* ═══ TOAST ═══ */}
+      {toast&&<div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"#1e293b",border:"1px solid #22c55e55",borderRadius:8,padding:"10px 16px",color:"#4ade80",fontSize:12,fontWeight:500,zIndex:1100,whiteSpace:"nowrap",boxShadow:"0 4px 20px #00000066",pointerEvents:"none"}}>{toast}</div>}
 
       {/* ═══ USAGE ═══ */}
       {tab==="usage"&&<div style={{flex:1,overflowY:"auto",padding:"16px 22px 36px"}}><div style={{maxWidth:700,margin:"0 auto"}}>
